@@ -1,0 +1,96 @@
+{
+  "name": "webhook-client-vanilla",
+  "version": "1.0.0",
+  "description": "Webhook 消息发送客户端",
+  "main": "electron/main.js",
+  "author": "Your Name",
+  "license": "ISC",
+  "scripts": {
+    "start": "electron .",
+    "tailwind:watch": "npx tailwindcss -i ./src/style.css -o ./src/output.css --watch",
+    "dev": "concurrently \"npm:tailwind:watch\" \"nodemon --watch electron --exec \\\"electron .\\\"\"",
+    "pack": "electron-builder --dir",
+    "dist": "npx electron-builder"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "electron-store": "^10.0.1",
+    "node-cron": "^3.0.3",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.19",
+    "concurrently": "^8.2.2",
+    "electron": "^31.2.1",
+    "electron-builder": "^24.9.1",
+    "nodemon": "^3.1.4",
+    "postcss": "^8.4.39",
+    "tailwindcss": "^3.4.4"
+  },
+  "build": {
+    "appId": "com.0vk.webhooksender", 
+    "productName": "Webhook Sender",
+    "copyright": "Copyright © 2024 Cheng Kai",
+    "directories": {
+      "output": "dist", 
+      "buildResources": "build"
+    },
+    "files": [ 
+      "electron/**/*",
+      "src/**/*",
+      "public/**/*",
+      "index.html",
+      "package.json",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*.d.ts",
+      "!**/node_modules/.bin",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!.editorconfig",
+      "!**/._*",
+      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+      "!**/{appveyor.yml,.travis.yml,circle.yml}",
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+    ],
+    "extraResources": [ 
+      {
+        "from": "public/icon.png",
+        "to": "public/icon.png" 
+      }
+    ],
+    "win": { 
+      "icon": "public/icon.png", 
+      "target": [
+        "nsis", 
+        "zip"   
+      ]
+    },
+    "nsis": { 
+      "oneClick": false, 
+      "allowToChangeInstallationDirectory": true, 
+      "perMachine": false, 
+      "createDesktopShortcut": true, 
+      "createStartMenuShortcut": true, 
+      "runAfterFinish": true 
+    },
+    "mac": { 
+      "icon": "public/icon.icns", 
+      "category": "public.app-category.developer-tools", 
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "linux": { 
+      "icon": "public/icon.png", 
+      "category": "Utility",
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm",
+        "zip"
+      ]
+    }
+  }
+}

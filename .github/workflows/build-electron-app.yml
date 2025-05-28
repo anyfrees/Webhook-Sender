@@ -1,0 +1,111 @@
+name: Build Electron App
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }} (${{ matrix.arch || 'native' }})
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+        include: # 包含特定架构的配置
+          - os: macos-latest
+            arch: x64 # 明确为 macOS 构建 x64 版本
+          - os: ubuntu-latest # Linux 通常会构建与运行器匹配的架构
+          - os: windows-latest # Windows 通常会构建与运行器匹配的架构 (主要是x64)
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18' 
+
+      - name: Install dependencies (npm)
+        run: npm install --frozen-lockfile
+
+      # 您可以在这里添加一个步骤来构建 Tailwind CSS，如果它不是自动的
+      # - name: Build Tailwind CSS (if needed)
+      #   run: npm run build:css # 假设您有一个 build:css 脚本
+
+      - name: Build and package Electron app
+        # electron-builder 会使用 package.json 中的 "build" 配置
+        # --${{ matrix.arch }} 参数会覆盖 package.json 中的 arch 设置（如果需要）
+        run: |
+          if [ "$RUNNER_OS" == "Linux" ] || [ "$RUNNER_OS" == "macOS" ]; then
+            chmod +x node_modules/.bin/electron-builder
+          fi
+          npm run dist -- --${{ matrix.os == 'macos-latest' && matrix.arch || (matrix.os == 'windows-latest' && 'win' || 'linux') }} --${{ matrix.arch || '' }}
+        env:
+          # 代码签名环境变量 (重要, 但初始可跳过)
+          # CSC_LINK: ${{ secrets.CSC_LINK }}
+          # CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+
+      - name: List files in dist directory # 添加此步骤用于调试，查看生成了哪些文件
+        run: ls -R dist/
+
+      - name: Upload Windows Artifact (NSIS Installer)
+        if: matrix.os == 'windows-latest' && steps.build.outputs.nsisInstaller # 假设build步骤有输出
+        uses: actions/upload-artifact@v4
+        with:
+          name: Webhook-Sender-Windows-Setup-${{ github.sha }}
+          path: dist/*.exe # 或者更精确的路径，例如 dist/Webhook Sender Setup *.exe
+
+      - name: Upload Windows Artifact (ZIP)
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Webhook-Sender-Windows-portable-${{ github.sha }}
+          path: dist/*.zip # 假设 portable 或 zip 也输出为 zip
+
+      - name: Upload macOS Artifact (DMG)
+        if: matrix.os == 'macos-latest' && matrix.arch == 'x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Webhook-Sender-macOS-x64-${{ github.sha }}.dmg
+          path: dist/*.dmg
+
+      - name: Upload macOS Artifact (ZIP)
+        if: matrix.os == 'macos-latest' && matrix.arch == 'x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Webhook-Sender-macOS-x64-zip-${{ github.sha }}
+          path: dist/*mac*.zip # 通常 macOS 的 zip 包会包含 'mac'
+
+      - name: Upload Linux Artifact (AppImage)
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Webhook-Sender-Linux-AppImage-${{ github.sha }}
+          path: dist/*.AppImage
+          
+      - name: Upload Linux Artifact (deb)
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Webhook-Sender-Linux-deb-${{ github.sha }}
+          path: dist/*.deb
+
+      - name: Upload Linux Artifact (rpm)
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Webhook-Sender-Linux-rpm-${{ github.sha }}
+          path: dist/*.rpm
