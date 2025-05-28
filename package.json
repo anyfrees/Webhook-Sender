@@ -85,6 +85,7 @@
     "linux": { 
       "icon": "public/icon.png", 
       "category": "Utility",
+      "maintainer": "Cheng Kai <i@chengkai.vip>",
       "target": [
         "AppImage",
         "deb",
