@@ -1,3 +1,5 @@
+# build-electron-app.yml
+
 name: Build Electron App
 
 on:
@@ -13,16 +15,24 @@ on:
 
 jobs:
   build:
-    name: Build for ${{ matrix.os }} (${{ matrix.arch || 'native' }})
+    name: Build for ${{ matrix.os }} (${{ matrix.arch }})
     timeout-minutes: 60
     strategy:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
+        arch: [x64] # 默认架构
         include: 
+          # 为 Intel 和 Apple Silicon 分别构建 macOS 版本
           - os: macos-latest
             arch: x64 
-          - os: ubuntu-latest 
-          - os: windows-latest 
+          - os: macos-latest
+            arch: arm64
+          # 构建 Linux x64 版本
+          - os: ubuntu-latest
+            arch: x64
+          # 构建 Windows x64 版本
+          - os: windows-latest
+            arch: x64
 
     runs-on: ${{ matrix.os }}
 
@@ -39,71 +49,64 @@ jobs:
         run: npm install --frozen-lockfile
 
       - name: Build and package Electron app
-        # 修改此处的 run 命令
+        # 简化并修正了构建命令，确保为每个平台和架构正确传递参数
         run: |
-          if [[ "$RUNNER_OS" == "Linux" || "$RUNNER_OS" == "macOS" ]]; then
-            echo "Setting execute permission for electron-builder on $RUNNER_OS"
-            chmod +x node_modules/.bin/electron-builder
-          fi
-          npm run dist -- --${{ matrix.os == 'macos-latest' && matrix.arch || (matrix.os == 'windows-latest' && 'win' || 'linux') }} ${{ matrix.arch && format('--{0}', matrix.arch) || '' }}
-        shell: bash # 为所有平台强制使用 bash shell，以统一脚本行为
+          npm run dist -- --${{ matrix.os == 'macos-latest' && 'mac' || (matrix.os == 'windows-latest' && 'win' || 'linux') }} --${{ matrix.arch }}
+        shell: bash
         env:
-          # CSC_LINK: ${{ secrets.CSC_LINK }} 
-          # CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }} 
-          # APPLE_ID: ${{ secrets.APPLE_ID }} 
-          # APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }} 
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }} 
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
 
       - name: List files in dist directory 
         run: ls -R dist/
-        shell: bash # 确保 ls 命令在所有平台可用
+        shell: bash
+
+      # --- 上传构建产物 (已根据架构更新命名) ---
 
       - name: Upload Windows Artifact (NSIS Installer)
         if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Webhook-Sender-Windows-Setup-${{ matrix.arch || 'x64' }}-${{ github.run_id }}
+          name: Webhook-Sender-Windows-Setup-${{ matrix.arch }}-${{ github.run_id }}
           path: dist/*.exe 
 
-      - name: Upload Windows Artifact (ZIP)
+      - name: Upload Windows Artifact (Portable)
         if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Webhook-Sender-Windows-portable-${{ matrix.arch || 'x64' }}-${{ github.run_id }}
+          name: Webhook-Sender-Windows-portable-${{ matrix.arch }}-${{ github.run_id }}
           path: dist/*.zip 
 
       - name: Upload macOS Artifact (DMG)
-        if: matrix.os == 'macos-latest' && matrix.arch == 'x64'
+        if: matrix.os == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Webhook-Sender-macOS-x64-${{ github.run_id }}.dmg
+          name: Webhook-Sender-macOS-${{ matrix.arch }}-${{ github.run_id }}.dmg
           path: dist/*.dmg
 
       - name: Upload macOS Artifact (ZIP)
-        if: matrix.os == 'macos-latest' && matrix.arch == 'x64'
+        if: matrix.os == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Webhook-Sender-macOS-x64-zip-${{ github.run_id }}
+          name: Webhook-Sender-macOS-${{ matrix.arch }}-zip-${{ github.run_id }}
           path: dist/*mac*.zip 
 
       - name: Upload Linux Artifact (AppImage)
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Webhook-Sender-Linux-AppImage-${{ matrix.arch || 'amd64' }}-${{ github.run_id }}
+          name: Webhook-Sender-Linux-AppImage-${{ matrix.arch }}-${{ github.run_id }}
           path: dist/*.AppImage
           
       - name: Upload Linux Artifact (deb)
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Webhook-Sender-Linux-deb-${{ matrix.arch || 'amd64' }}-${{ github.run_id }}
+          name: Webhook-Sender-Linux-deb-${{ matrix.arch }}-${{ github.run_id }}
           path: dist/*.deb
 
       - name: Upload Linux Artifact (rpm)
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Webhook-Sender-Linux-rpm-${{ matrix.arch || 'x86_64' }}-${{ github.run_id }}
+          name: Webhook-Sender-Linux-rpm-${{ matrix.arch }}-${{ github.run_id }}
           path: dist/*.rpm
