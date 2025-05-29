@@ -1,6 +1,6 @@
 {
   "name": "webhook-client-vanilla",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Webhook 消息发送客户端",
   "main": "electron/main.js",
   "author": "Cheng Kai",

@@ -5,16 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Webhook Sender</title>
     <link rel="stylesheet" href="./src/output.css">
+    <style>
+        /* 针对 datetime-local 输入框的日历图标颜色 (部分浏览器可能有效) */
+        input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+            filter: invert(0.8); /* 尝试反转颜色使图标在深色背景下可见 */
+        }
+        /* 隐藏通用URL和Method选择的容器，初始状态 */
+        .template-url-method-container.hidden {
+            display: none;
+        }
+         /* 隐藏请求头编辑区域的容器 */
+        .template-headers-container.hidden {
+            display: none;
+        }
+    </style>
 </head>
 <body class="bg-gray-800">
 
     <div class="flex flex-col h-screen font-sans text-white bg-[#171a21]">
         <div id="title-bar" class="w-full h-8 bg-[#2f3241] flex items-center justify-between flex-shrink-0" style="-webkit-app-region: drag">
             <div class="flex items-center px-3">
-                <img src="icon.png" alt="App Icon" class="w-4 h-4 mr-2" /> 
+                <img src="icon.png" alt="App Icon" class="w-4 h-4 mr-2" />
                 <div class="text-sm text-gray-300">Webhook Sender</div>
             </div>
-
             <div class="flex items-center h-full" style="-webkit-app-region: no-drag">
                 <button id="titlebar-about-btn" title="关于" class="px-3 h-full hover:bg-gray-600 focus:outline-none text-gray-300">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -53,11 +66,6 @@
                         <label for="startup-checkbox" class="text-xs text-gray-300 cursor-pointer">开机启动</label>
                         <input type="checkbox" id="startup-checkbox" class="form-checkbox h-4 w-4 text-indigo-600 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500 cursor-pointer">
                     </div>
-                    <!-- 
-                    <div class="mt-2">
-                        <button id="about-btn" class="w-full text-left text-xs text-gray-400 hover:text-indigo-300 py-1.5 px-3 focus:outline-none hover:bg-gray-700/50 rounded">关于 Webhook Sender</button>
-                    </div>
-                     -->
                 </div>
             </aside>
 
@@ -70,28 +78,26 @@
                             <button id="send-now-btn" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded disabled:bg-gray-500 disabled:cursor-not-allowed shadow-md hover:shadow-lg transition-shadow">立即发送</button>
                         </div>
                         <div class="mb-4 flex-shrink-0">
-                            <label for="template-select" class="block text-sm font-medium text-gray-300 mb-1">选择 Webhook 地址模板:</label>
+                            <label for="template-select" class="block text-sm font-medium text-gray-300 mb-1">选择地址模板:</label>
                             <select id="template-select" class="w-full bg-[#1e2128] border border-gray-600 rounded px-3 py-1.5 text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"></select>
                             <div id="selected-template-url-container" class="mt-2 p-2 bg-[#1a1d24] rounded border border-gray-700/50 hidden">
                                <div class="flex justify-between items-center">
                                     <p id="selected-template-url-display" class="text-sm text-gray-400 truncate"></p>
-                                    <button id="toggle-url-visibility-btn" class="ml-2 text-gray-500 hover:text-white"></button>
+                                    <button id="toggle-url-visibility-btn" class="ml-2 text-gray-500 hover:text-white">
+                                        </button>
                                </div>
                             </div>
                         </div>
-                        
-                        <div id="phone-number-section" class="mb-4 flex-shrink-0 hidden">
-                            <label for="phone-number-input" class="block text-sm font-medium text-gray-300 mb-1">手机号码:</label>
+                        <div id="phone-number-section" class="mb-4 flex-shrink-0">
+                            <label for="phone-number-input" id="recipient-label" class="block text-sm font-medium text-gray-300 mb-1">手机号码:</label>
                             <input type="text" id="phone-number-input" placeholder="请输入目标手机号码" class="w-full bg-[#1e2128] border border-gray-600 rounded px-3 py-1.5 text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
                         </div>
-
                         <div class="flex border-b border-gray-700 mb-4 flex-shrink-0">
                             <button data-tab="body" class="editor-tab px-4 py-2 focus:outline-none text-gray-400 hover:text-white">发送内容</button>
                             <button data-tab="headers" class="editor-tab px-4 py-2 focus:outline-none text-gray-400 hover:text-white">请求头</button>
                             <button data-tab="schedule" class="editor-tab px-4 py-2 focus:outline-none text-gray-400 hover:text-white">定时发送</button>
                             <button data-tab="history" class="editor-tab px-4 py-2 focus:outline-none text-gray-400 hover:text-white">发送历史</button>
                         </div>
-                        
                         <div class="flex-grow min-h-0 flex flex-col">
                             <div id="tab-content-body" class="tab-pane hidden flex-grow flex flex-col">
                                 <textarea id="webhook-body" class="w-full flex-grow font-sans text-sm bg-[#1e2128] border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 resize-none" placeholder="输入纯文本消息 (将替换模板中的 {userMessage})"></textarea>
@@ -123,7 +129,39 @@
                             <input type="text" id="template-name-input" placeholder="模板名称" class="text-xl font-semibold bg-transparent focus:outline-none text-gray-100 flex-grow mr-4 p-1 rounded border border-transparent focus:border-teal-500">
                             <button id="save-template-btn" class="bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded shadow-md hover:shadow-lg transition-shadow">保存模板</button>
                         </div>
+
                         <div class="mb-4 flex-shrink-0">
+                            <label for="template-type-select" class="block text-sm font-medium text-gray-300 mb-1">模板类型:</label>
+                            <select id="template-type-select" class="w-full bg-[#1e2128] border border-gray-600 rounded px-3 py-1.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500">
+                                <option value="generic">通用 Webhook</option>
+                                <option value="workweixin">腾讯企业微信应用</option>
+                            </select>
+                        </div>
+
+                        <div id="workweixin-fields-container" class="hidden space-y-3 mb-4 flex-shrink-0">
+                            <div>
+                                <label for="workweixin-corpid-input" class="block text-sm font-medium text-gray-300 mb-1">企业ID (CorpID):</label>
+                                <input type="text" id="workweixin-corpid-input" placeholder="请输入企业ID" class="w-full bg-[#1e2128] border border-gray-600 rounded px-3 py-1.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500">
+                            </div>
+                            <div>
+                                <label for="workweixin-corpsecret-input" class="block text-sm font-medium text-gray-300 mb-1">应用密钥 (CorpSecret):</label>
+                                <input type="password" id="workweixin-corpsecret-input" placeholder="输入新密钥或留空以保留旧密钥" class="w-full bg-[#1e2128] border border-gray-600 rounded px-3 py-1.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500">
+                                <p class="text-xs text-gray-500 mt-1">密钥将被加密存储。如果此处显示 ********，表示已有密钥被保存。</p>
+                            </div>
+                            <div>
+                                <label for="workweixin-agentid-input" class="block text-sm font-medium text-gray-300 mb-1">应用ID (AgentID):</label>
+                                <input type="text" id="workweixin-agentid-input" placeholder="请输入应用AgentID" class="w-full bg-[#1e2128] border border-gray-600 rounded px-3 py-1.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500">
+                            </div>
+                            <div>
+                                <label for="workweixin-msgtype-select" class="block text-sm font-medium text-gray-300 mb-1">消息类型:</label>
+                                <select id="workweixin-msgtype-select" class="w-full bg-[#1e2128] border border-gray-600 rounded px-3 py-1.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500">
+                                    <option value="text">文本消息 (text)</option>
+                                    <option value="markdown">Markdown消息 (markdown)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div id="template-url-container" class="mb-4 flex-shrink-0 template-url-method-container">
                             <label for="template-url-input" class="block text-sm font-medium text-gray-300 mb-1">模板 URL (可使用 <code>{phoneNumber}</code> 占位符):</label>
                             <div class="flex items-center space-x-2">
                                 <select id="template-method-select" class="bg-[#1e2128] border border-gray-600 rounded px-2 py-1.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500">
@@ -132,41 +170,41 @@
                                 <input type="text" id="template-url-input" placeholder="https://api.example.com/send/KEY_HERE?target={phoneNumber}" class="w-full bg-[#1e2128] border border-gray-600 rounded px-3 py-1.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500">
                             </div>
                         </div>
-                        
+
                         <div class="mb-4 flex-grow flex flex-col min-h-0">
-                            <label for="template-body-input" class="block text-sm font-medium text-gray-300 mb-1 flex-shrink-0">请求体模板 (JSON格式, 可用 <code>{phoneNumber}</code> 和 <code>{userMessage}</code>):</label>
-                            <textarea id="template-body-input" class="w-full flex-grow font-mono text-sm bg-[#1a1d24] border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 resize-none" placeholder='例如: {"msgtype":"text","text":{"content":"{userMessage}"},"touser":"{phoneNumber}"}'></textarea>
+                            <label for="template-body-input" id="template-body-label" class="block text-sm font-medium text-gray-300 mb-1 flex-shrink-0">请求体模板 / 消息内容:</label>
+                            <textarea id="template-body-input" class="w-full flex-grow font-mono text-sm bg-[#1a1d24] border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 resize-none" placeholder='通用: {"msgtype":"text","text":{"content":"{userMessage}"},"touser":"{phoneNumber}"} | 企业微信: 您的消息内容...'></textarea>
                         </div>
 
-                        <div class="flex-grow min-h-0 flex flex-col mt-4">
+                        <div class="flex-grow min-h-0 flex flex-col mt-4 template-headers-container">
                             <label class="block text-sm font-medium text-gray-300 mb-2 flex-shrink-0">通用请求头:</label>
                             <div id="template-headers-list" class="space-y-2 overflow-y-auto flex-grow"></div>
                             <button id="add-template-header-btn" class="mt-3 text-teal-400 hover:text-teal-300 focus:outline-none py-1 px-2 rounded border border-teal-400 hover:bg-teal-400 hover:text-gray-900 transition-colors flex-shrink-0">+ 添加请求头</button>
                         </div>
                     </div>
                 </div>
-                
+
                 <div id="about-view" class="hidden flex-col flex-grow p-6 text-gray-300">
                     <h2 class="text-2xl font-semibold text-gray-100 mb-6 pb-2 border-b border-gray-700">关于 Webhook Sender</h2>
-                    
                     <div class="mb-8">
                         <h3 class="text-lg font-semibold text-gray-200 mb-2">程序使用说明</h3>
                         <p class="text-sm mb-2">
                             Webhook Sender 是一款帮助您轻松管理和发送 Webhook 消息的桌面工具。
                         </p>
                         <ul class="list-disc list-inside text-sm space-y-1 pl-4">
-                            <li>通过“地址模板”可以预设常用的 Webhook URL 和请求体结构，支持使用 <code>{phoneNumber}</code> 和 <code>{userMessage}</code> 占位符。</li>
-                            <li>在“发送配置”中，您可以选择一个地址模板，并填写具体的消息内容和手机号（如果模板需要）。</li>
+                            <li>通过“地址模板”可以预设常用的 Webhook URL 和请求体结构 (通用类型)，或配置企业微信应用信息。</li>
+                            <li>通用模板支持使用 <code>{phoneNumber}</code> 和 <code>{userMessage}</code> 占位符。</li>
+                            <li>企业微信模板需要配置 CorpID, CorpSecret (将加密存储), AgentID 和消息类型。</li>
+                            <li>在“发送配置”中，您可以选择一个地址模板，并填写具体的消息内容和接收者信息。</li>
                             <li>支持立即发送，也支持设置“定时发送”任务。</li>
                             <li>每个发送配置都有独立的“发送历史”记录。</li>
-                            <li>您可以通过侧边栏底部的“备份配置”和“恢复配置”来保存和还原您的所有设置。</li>
+                            <li>您可以通过侧边栏底部的“备份配置”和“恢复配置”来保存和还原您的所有设置 (敏感信息如CorpSecret在备份文件中保持加密状态)。</li>
                             <li>勾选“开机时启动应用”可以让程序在您登录系统后自动运行并在后台执行定时任务。</li>
                         </ul>
                         <p class="text-sm mt-3">
-                            所有敏感的URL地址（包括模板中、定时任务中、历史记录中以及备份文件中）均已进行加密处理，以保护您的信息安全。
+                            所有敏感信息（如URL中的密钥部分、企业微信的CorpSecret）在存储和备份时均已进行加密处理，以保护您的信息安全。
                         </p>
                     </div>
-
                     <div>
                         <h3 class="text-lg font-semibold text-gray-200 mb-2">开发者信息</h3>
                         <p class="text-sm">开发者：Cheng Kai</p>
@@ -177,10 +215,8 @@
                             邮箱：<a href="mailto:i@chengkai.vip" class="text-indigo-400 hover:text-indigo-300 hover:underline">i@chengkai.vip</a>
                         </p>
                     </div>
-
                      <button id="close-about-view-btn" class="mt-8 mx-auto bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-6 rounded shadow-md hover:shadow-lg transition-shadow focus:outline-none">关闭</button>
                 </div>
-
 
                 <div id="welcome-screen" class="flex flex-col items-center justify-center h-full text-gray-400">
                      <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1"><path stroke-linecap="round" stroke-linejoin="round" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" /></svg>
@@ -194,16 +230,16 @@
     <div id="custom-dialog-overlay" class="fixed inset-0 bg-black/50 hidden items-center justify-center p-4 z-50">
         <div id="custom-dialog" class="bg-[#2f3241] rounded-lg shadow-xl w-full max-w-md flex flex-col">
             <div class="p-4 border-b border-gray-700">
-                <h2 id="dialog-title" class="text-lg font-semibold text-gray-100">Dialog Title</h2>
+                <h2 id="dialog-title" class="text-lg font-semibold text-gray-100">对话框标题</h2>
             </div>
             <div class="p-6">
-                <p id="dialog-message" class="text-sm text-gray-300">This is the dialog message.</p>
+                <p id="dialog-message" class="text-sm text-gray-300">这是对话框消息。</p>
             </div>
             <div id="dialog-buttons" class="p-4 bg-[#23272e] rounded-b-lg flex justify-end space-x-3">
             </div>
         </div>
     </div>
-    
+
     <script type="module" src="./src/renderer.js"></script>
 </body>
 </html>
