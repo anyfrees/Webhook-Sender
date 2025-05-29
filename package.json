@@ -28,20 +28,21 @@
     "tailwindcss": "^3.4.4"
   },
   "build": {
-    "appId": "com.0vk.webhooksender", 
+    "appId": "com.0vk.webhooksender",
     "productName": "Webhook Sender",
     "copyright": "Copyright © 2024 Cheng Kai",
     "directories": {
-      "output": "dist", 
-      "buildResources": "build" 
+      "output": "dist",
+      "buildResources": "build"
     },
-    "files": [ 
+    "files": [
       "electron/**/*",
       "src/**/*",
       "index.html",
       "package.json",
-      "icon.png",        
-      "icon.icns",       
+      "icon.png",
+      "icon.icns",
+      "icon.ico",
       "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
       "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
       "!**/node_modules/*.d.ts",
@@ -54,49 +55,40 @@
       "!**/{appveyor.yml,.travis.yml,circle.yml}",
       "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
     ],
-    "extraResources": [  
+    "extraResources": [
       {
-        "from": "icon.png", 
-        "to": "icon.png"    
-      },
-      { 
-        "from": "icon.icns",
-        "to": "icon.icns",
-        "filter": ["**/*"] 
+        "from": "assets/tray_icons/tray_icon.ico",
+        "to": "app_icons/tray_icon.ico"
       }
     ],
-    "win": { 
+    "win": {
+      "icon": "icon.ico",
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true
+    },
+    "mac": {
+      "icon": "icon.icns",
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg"
+      ]
+    },
+    "linux": {
       "icon": "icon.png",
-      "target": [
-        "nsis", 
-        "zip"   
-      ]
-    },
-    "nsis": { 
-      "oneClick": false, 
-      "allowToChangeInstallationDirectory": true, 
-      "perMachine": false, 
-      "createDesktopShortcut": true, 
-      "createStartMenuShortcut": true, 
-      "runAfterFinish": true 
-    },
-    "mac": { 
-      "icon": "icon.icns", 
-      "category": "public.app-category.developer-tools", 
-      "target": [
-        "dmg",
-        "zip"
-      ]
-    },
-    "linux": { 
-      "icon": "icon.png", 
       "category": "Utility",
-      "maintainer": "Cheng Kai <i@chengkai.vip>", 
+      "maintainer": "Cheng Kai <i@chengkai.vip>",
       "target": [
         "AppImage",
-        "deb",
-        "rpm",
-        "zip"
+        "deb"
       ]
     }
   }

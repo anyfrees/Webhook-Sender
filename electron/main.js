@@ -7,7 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
-const crypto = require('crypto'); 
+const crypto = require('crypto');
 
 let Store;
 let store;
@@ -20,25 +20,19 @@ let ipcHandlersRegistered = false;
 const shouldStartHidden = process.argv.includes('--hidden');
 
 // --- 密钥和加密函数 ---
-// 警告：这个密钥字符串需要您替换为一个自己定义的、足够复杂的字符串。
-// 应用将使用这个字符串派生出实际的加密密钥。
-const APP_SECRET_STRING = 'nICleddY4Jl5*gD~w3B+dJx+SG3czmL6'; 
-// 从密钥字符串派生出32字节的加密密钥 (Buffer)
-const APP_ENCRYPTION_KEY = crypto.createHash('sha256').update(APP_SECRET_STRING).digest(); // .digest()默认返回Buffer
+const APP_SECRET_STRING = 'nICleddY4Jl5*gD~w3B+dJx+SG3czmL6';
+const APP_ENCRYPTION_KEY = crypto.createHash('sha256').update(APP_SECRET_STRING).digest();
 
-const IV_LENGTH = 16; // AES块大小通常是16字节
+const IV_LENGTH = 16;
 
 function encryptText(text) {
     if (text === null || typeof text === 'undefined' || text === '') return text;
-    // 避免对已经是 "iv:ciphertext" 格式的文本重复加密 (简单检查)
     if (typeof text === 'string' && text.includes(':') && text.split(':').length === 2) {
         const parts = text.split(':');
         if (parts[0].length === IV_LENGTH * 2 && /^[0-9a-fA-F]+$/.test(parts[0]) && /^[0-9a-fA-F]+$/.test(parts[1])) {
-            // console.warn('Attempting to encrypt already encrypted-like string, returning as is:', text.substring(0,50) + "...");
-            return text; 
+            return text;
         }
     }
-
     try {
         const iv = crypto.randomBytes(IV_LENGTH);
         const cipher = crypto.createCipheriv('aes-256-cbc', APP_ENCRYPTION_KEY, iv);
@@ -47,37 +41,33 @@ function encryptText(text) {
         return iv.toString('hex') + ':' + encrypted;
     } catch (error) {
         console.error('加密文本失败:', error, '输入:', text);
-        return String(text); // 加密失败返回原字符串
+        return String(text);
     }
 }
 
 function decryptText(text) {
     if (!text || typeof text !== 'string' || !text.includes(':') || text.split(':').length !== 2) {
-        // console.log('解密文本格式无效或为空，返回原文:', text);
-        return text; 
+        return text;
     }
     try {
         const parts = text.split(':');
         const iv = Buffer.from(parts[0], 'hex');
         const encryptedText = Buffer.from(parts[1], 'hex');
-        // 确保密钥是Buffer类型
         const decipher = crypto.createDecipheriv('aes-256-cbc', APP_ENCRYPTION_KEY, iv);
         let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
         decrypted += decipher.final('utf8');
         return decrypted;
     } catch (error) {
-        // console.error('解密文本失败 (可能已经是明文或密钥不匹配):', error, '尝试解密的文本:', text.substring(0, 50) + "..."); 
-        return text; 
+        return text;
     }
 }
 
-// --- 单实例锁 ---
 const gotTheLock = app.requestSingleInstanceLock();
 
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on('second-instance', (event, commandLine, workingDirectory) => {
+  app.on('second-instance', () => {
     if (mainWindow) {
       if (mainWindow.isMinimized() || !mainWindow.isVisible()) {
         mainWindow.show();
@@ -95,7 +85,7 @@ if (!gotTheLock) {
     }
   });
 
-  app.on('activate', () => { 
+  app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       if (store) {
         createWindow();
@@ -120,455 +110,331 @@ if (!gotTheLock) {
   });
 }
 
-
 async function initializeStoreAndApp() {
   try {
     Store = (await import('electron-store')).default;
     store = new Store({
-      encryptionKey: APP_ENCRYPTION_KEY, 
-      defaults: {
-          webhooks: [], 
-          webhookUrlTemplates: [], 
-          history: {}, 
-          scheduledTasks: []
-      },
-      clearInvalidConfig: true, 
+      encryptionKey: APP_ENCRYPTION_KEY,
+      defaults: { webhooks: [], webhookUrlTemplates: [], history: {}, scheduledTasks: [] },
+      clearInvalidConfig: true,
     });
     console.log("[Main] electron-store initialized with encryption.");
-    
-    if (!ipcHandlersRegistered) {
-        registerIpcHandlers();
-    }
 
-    const loadedTasksEncryptedInternals = store.get('scheduledTasks', []);
-    const loadedTasksDecryptedForScheduler = loadedTasksEncryptedInternals.map(task => ({
+    if (!ipcHandlersRegistered) registerIpcHandlers();
+
+    const loadedTasks = store.get('scheduledTasks', []).map(task => ({
         ...task,
         finalUrl: decryptText(task.finalUrl),
-        webhookSnapshot: task.webhookSnapshot ? {
-            ...task.webhookSnapshot,
-            url: decryptText(task.webhookSnapshot.url) 
-        } : undefined
+        webhookSnapshot: task.webhookSnapshot ? { ...task.webhookSnapshot, url: decryptText(task.webhookSnapshot.url) } : undefined
     }));
 
-    console.log(`[Main] Loaded ${loadedTasksDecryptedForScheduler.length} tasks for scheduler.`);
-    const validTasksForScheduler = [];
-    const currentTime = new Date().getTime();
-    for (const task of loadedTasksDecryptedForScheduler) { 
+    console.log(`[Main] Loaded ${loadedTasks.length} tasks for scheduler.`);
+    const validTasks = [];
+    const currentTime = Date.now();
+    for (const task of loadedTasks) {
         if (new Date(task.scheduledTime).getTime() > currentTime) {
-            validTasksForScheduler.push(task);
-            scheduleTaskWithTimeout(task); 
+            validTasks.push(task);
+            scheduleTaskWithTimeout(task);
         } else {
             console.log(`[Main] Discarding expired task on startup: ${task.webhookSnapshot?.name || task.id}`);
         }
     }
-    if (validTasksForScheduler.length < loadedTasksEncryptedInternals.length) {
-        const validTasksToStore = validTasksForScheduler.map(task => ({
-            ...task, 
-            finalUrl: encryptText(task.finalUrl), 
-            webhookSnapshot: task.webhookSnapshot ? {
-                ...task.webhookSnapshot,
-                url: encryptText(task.webhookSnapshot.url) 
-            } : undefined
-        }));
-        store.set('scheduledTasks', validTasksToStore);
+    if (validTasks.length < loadedTasks.length) {
+        store.set('scheduledTasks', validTasks.map(task => ({
+            ...task,
+            finalUrl: encryptText(task.finalUrl),
+            webhookSnapshot: task.webhookSnapshot ? { ...task.webhookSnapshot, url: encryptText(task.webhookSnapshot.url) } : undefined
+        })));
     }
 
-    createWindow(); 
+    createWindow();
     createTray();
 
   } catch (error) {
     console.error("[Main] Failed to initialize electron-store or app:", error);
-    dialog.showErrorBox("应用初始化错误", "加载核心组件或配置文件失败，可能是由于配置文件损坏或加密密钥不匹配。\n\n错误详情: " + error.message + "\n\n您可以尝试删除应用的配置文件后重启应用。配置文件通常位于用户目录下的 AppData\\Roaming\\webhook-sender (Windows) 或 ~/.config/webhook-sender (Linux/macOS)。");
+    dialog.showErrorBox("应用初始化错误", `加载核心组件或配置文件失败: ${error.message}`);
     app.quit();
   }
 }
 
-
 function registerIpcHandlers() {
-    if (ipcHandlersRegistered) {
-        return;
-    }
-    
+    if (ipcHandlersRegistered) return;
     ipcMain.handle('get-store-data', () => {
         if (!store) return { webhooks: [], webhookUrlTemplates: [], history: {}, scheduledTasks: [] };
-        const templatesFromStore = store.get('webhookUrlTemplates', []);
-        const tasksFromStore = store.get('scheduledTasks', []);
-        const historyFromStore = store.get('history', {});
-
-        const decryptedTemplates = templatesFromStore.map(t => ({...t, url: decryptText(t.url)}));
-        const decryptedTasks = tasksFromStore.map(t => ({
-            ...t, 
-            finalUrl: decryptText(t.finalUrl), 
-            webhookSnapshot: t.webhookSnapshot ? {
-                ...t.webhookSnapshot, 
-                url: decryptText(t.webhookSnapshot.url)
-            } : undefined 
-        }));
-        const decryptedHistory = {};
-        for (const webhookId in historyFromStore) {
-            decryptedHistory[webhookId] = historyFromStore[webhookId].map(entry => {
-                if (entry.request && entry.request.url) {
-                    return { ...entry, request: { ...entry.request, url: decryptText(entry.request.url) } };
-                }
-                return entry;
-            });
-        }
-
-        return {
-            webhooks: store.get('webhooks', []), 
-            webhookUrlTemplates: decryptedTemplates,
-            history: decryptedHistory,
-            scheduledTasks: decryptedTasks
-        };
-    });
-
-    ipcMain.handle('get-templates', () => {
-        if (!store) return [];
-        const templatesFromStore = store.get('webhookUrlTemplates', []);
-        return templatesFromStore.map(t => ({ ...t, url: decryptText(t.url) }));
-    });
-
-    ipcMain.handle('save-templates', (event, templatesToSave ) => {
-        if (!store) return { success: false, msg: "Store not initialized." };
-        const encryptedTemplates = templatesToSave.map(t => ({
+        const templates = store.get('webhookUrlTemplates', []).map(t => ({ ...t, url: decryptText(t.url) }));
+        const tasks = store.get('scheduledTasks', []).map(t => ({
             ...t,
-            url: encryptText(t.url) 
+            finalUrl: decryptText(t.finalUrl),
+            webhookSnapshot: t.webhookSnapshot ? { ...t.webhookSnapshot, url: decryptText(t.webhookSnapshot.url) } : undefined
         }));
-        store.set('webhookUrlTemplates', encryptedTemplates); 
-        return { success: true };
-    });
-
-    ipcMain.handle('save-webhooks', (event, webhooksToSave) => {
-        if (!store) return { success: false, msg: "Store not initialized." };
-        store.set('webhooks', webhooksToSave);
-        return { success: true };
-    });
-
-    ipcMain.handle('send-now', async (event, webhookToSend ) => {
-        if (!store) return { success: false, msg: "Store not initialized." };
-        if (!webhookToSend || !webhookToSend.url) {
-            return { success: false, msg: "无效的 webhook 配置或 URL 为空。" };
+        const hist = {};
+        const storedHistory = store.get('history', {});
+        for (const id in storedHistory) {
+            hist[id] = storedHistory[id].map(entry => entry.request?.url ? { ...entry, request: { ...entry.request, url: decryptText(entry.request.url) } } : entry);
         }
-        return await sendWebhookRequest(webhookToSend); 
+        return { webhooks: store.get('webhooks', []), webhookUrlTemplates: templates, history: hist, scheduledTasks: tasks };
     });
-
-    ipcMain.handle('schedule-explicit-task', (event, taskToSchedule ) => {
+    ipcMain.handle('get-templates', () => store ? store.get('webhookUrlTemplates', []).map(t => ({ ...t, url: decryptText(t.url) })) : []);
+    ipcMain.handle('save-templates', (event, templates) => {
         if (!store) return { success: false, msg: "Store not initialized." };
-        const encryptedTask = { 
-            ...taskToSchedule,
-            finalUrl: encryptText(taskToSchedule.finalUrl),
-            webhookSnapshot: taskToSchedule.webhookSnapshot ? {
-                ...taskToSchedule.webhookSnapshot,
-                url: encryptText(taskToSchedule.webhookSnapshot.url) 
-            } : undefined
+        store.set('webhookUrlTemplates', templates.map(t => ({ ...t, url: encryptText(t.url) })));
+        return { success: true };
+    });
+    ipcMain.handle('save-webhooks', (event, webhooks) => {
+        if (!store) return { success: false, msg: "Store not initialized." };
+        store.set('webhooks', webhooks);
+        return { success: true };
+    });
+    ipcMain.handle('send-now', async (event, webhook) => {
+        if (!store) return { success: false, msg: "Store not initialized." };
+        if (!webhook || !webhook.url) return { success: false, msg: "无效的 webhook 配置或 URL 为空。" };
+        return sendWebhookRequest(webhook);
+    });
+    ipcMain.handle('schedule-explicit-task', (event, task) => {
+        if (!store) return { success: false, msg: "Store not initialized." };
+        const encryptedTask = {
+            ...task,
+            finalUrl: encryptText(task.finalUrl),
+            webhookSnapshot: task.webhookSnapshot ? { ...task.webhookSnapshot, url: encryptText(task.webhookSnapshot.url) } : undefined
         };
-        const allTasksCurrentlyInStore = store.get('scheduledTasks', []); 
-        allTasksCurrentlyInStore.push(encryptedTask); 
-        store.set('scheduledTasks', allTasksCurrentlyInStore);
-
-        scheduleTaskWithTimeout(taskToSchedule); 
-        
-        const tasksForRenderer = allTasksCurrentlyInStore.map(t => ({
-            ...t, 
-            finalUrl: decryptText(t.finalUrl), 
-            webhookSnapshot: t.webhookSnapshot ? {
-                ...t.webhookSnapshot, 
-                url: decryptText(t.webhookSnapshot.url)
-            } : undefined 
-        }));
-        if (mainWindow && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
-            mainWindow.webContents.send('scheduled-tasks-update', tasksForRenderer.sort((a,b) => new Date(a.scheduledTime) - new Date(b.scheduledTime)));
+        const tasks = store.get('scheduledTasks', []);
+        tasks.push(encryptedTask);
+        store.set('scheduledTasks', tasks);
+        scheduleTaskWithTimeout(task);
+        if (mainWindow?.webContents && !mainWindow.webContents.isDestroyed()) {
+            mainWindow.webContents.send('scheduled-tasks-update', tasks.map(t_1 => ({ ...t_1, finalUrl: decryptText(t_1.finalUrl), webhookSnapshot: t_1.webhookSnapshot ? { ...t_1.webhookSnapshot, url: decryptText(t_1.webhookSnapshot.url) } : undefined })).sort((a, b) => new Date(a.scheduledTime) - new Date(b.scheduledTime)));
         }
-        return { success: true, taskId: taskToSchedule.id };
+        return { success: true, taskId: task.id };
     });
-    
     ipcMain.handle('backup-config', async () => {
         if (!store) return { success: false, msg: "Store not initialized." };
-        const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
-            title: '备份加密配置',
-            defaultPath: `webhook-sender-backup-encrypted-${Date.now()}.json`,
-            filters: [{ name: 'JSON Files', extensions: ['json'] }]
-        });
-        if (canceled || !filePath) {
-            return { success: false, msg: "用户取消了备份操作。" };
-        }
+        const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, { title: '备份加密配置', defaultPath: `webhook-sender-backup-encrypted-${Date.now()}.json`, filters: [{ name: 'JSON Files', extensions: ['json'] }] });
+        if (canceled || !filePath) return { success: false, msg: "用户取消了备份操作。" };
         try {
-            const backupData = {
-                webhooks: store.get('webhooks', []), 
-                webhookUrlTemplates: store.get('webhookUrlTemplates', []), 
-                history: store.get('history', {}), 
-                scheduledTasks: store.get('scheduledTasks', []) 
-            };
-            fs.writeFileSync(filePath, JSON.stringify(backupData, null, 2));
+            fs.writeFileSync(filePath, JSON.stringify({ webhooks: store.get('webhooks', []), webhookUrlTemplates: store.get('webhookUrlTemplates', []), history: store.get('history', {}), scheduledTasks: store.get('scheduledTasks', []) }, null, 2));
             return { success: true, msg: `加密配置已成功备份到 ${filePath}` };
         } catch (error) {
             console.error('[Backup] 备份失败:', error);
             return { success: false, msg: `备份失败: ${error.message}` };
         }
     });
-
     ipcMain.handle('restore-config', async () => {
         if (!store) return { success: false, msg: "Store not initialized." };
-        const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-            title: '恢复加密配置',
-            properties: ['openFile'],
-            filters: [{ name: 'JSON Files', extensions: ['json'] }]
-        });
-        if (canceled || filePaths.length === 0) {
-            return { success: false, msg: "用户取消了恢复操作。" };
-        }
+        const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, { title: '恢复加密配置', properties: ['openFile'], filters: [{ name: 'JSON Files', extensions: ['json'] }] });
+        if (canceled || !filePaths?.length) return { success: false, msg: "用户取消了恢复操作。" };
         try {
-            const filePath = filePaths[0];
-            const fileContent = fs.readFileSync(filePath, 'utf-8');
-            const restoredDataWithEncryptedUrls = JSON.parse(fileContent); 
-
-            if (typeof restoredDataWithEncryptedUrls.webhooks === 'undefined' || 
-                typeof restoredDataWithEncryptedUrls.webhookUrlTemplates === 'undefined') {
-                 return { success: false, msg: '文件格式无效，不是一个有效的备份文件。' };
-            }
-            store.set('webhooks', restoredDataWithEncryptedUrls.webhooks || []);
-            store.set('webhookUrlTemplates', restoredDataWithEncryptedUrls.webhookUrlTemplates || []);
-            store.set('history', restoredDataWithEncryptedUrls.history || {});
-            store.set('scheduledTasks', restoredDataWithEncryptedUrls.scheduledTasks || []);
-            
-            runningScheduledTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+            const data = JSON.parse(fs.readFileSync(filePaths[0], 'utf-8'));
+            if (typeof data.webhooks === 'undefined' || typeof data.webhookUrlTemplates === 'undefined') return { success: false, msg: '文件格式无效。' };
+            store.set('webhooks', data.webhooks || []);
+            store.set('webhookUrlTemplates', data.webhookUrlTemplates || []);
+            store.set('history', data.history || {});
+            store.set('scheduledTasks', data.scheduledTasks || []);
+            runningScheduledTimeouts.forEach(clearTimeout);
             runningScheduledTimeouts.clear();
-            
-            const tasksToRescheduleEncryptedUrls = store.get('scheduledTasks', []); 
-            const tasksToRescheduleDecrypted = tasksToRescheduleEncryptedUrls.map(t => ({
-                ...t,
-                finalUrl: decryptText(t.finalUrl), 
-                webhookSnapshot: t.webhookSnapshot ? {
-                    ...t.webhookSnapshot,
-                    url: decryptText(t.webhookSnapshot.url) 
-                } : undefined
-            }));
-
-            const currentTime = new Date().getTime();
-            const validTasksForReschedule = [];
-            for (const task of tasksToRescheduleDecrypted) { 
+            const tasks = store.get('scheduledTasks', []).map(t => ({ ...t, finalUrl: decryptText(t.finalUrl), webhookSnapshot: t.webhookSnapshot ? { ...t.webhookSnapshot, url: decryptText(t.webhookSnapshot.url) } : undefined }));
+            const currentTime = Date.now();
+            const validTasks = [];
+            for (const task of tasks) {
                 if (new Date(task.scheduledTime).getTime() > currentTime) {
-                    validTasksForReschedule.push(task); 
-                    scheduleTaskWithTimeout(task);    
+                    validTasks.push(task);
+                    scheduleTaskWithTimeout(task);
                 }
             }
-            if (validTasksForReschedule.length < tasksToRescheduleEncryptedUrls.length) {
-                const validTasksToStore = validTasksForReschedule.map(task => ({
-                    ...task, 
-                    finalUrl: encryptText(task.finalUrl), 
-                    webhookSnapshot: task.webhookSnapshot ? {
-                        ...task.webhookSnapshot,
-                        url: encryptText(task.webhookSnapshot.url) 
-                    } : undefined
-                }));
-                store.set('scheduledTasks', validTasksToStore);
-            }
-
-            const dataForRenderer = {
-                webhooks: restoredDataWithEncryptedUrls.webhooks || [],
-                webhookUrlTemplates: (restoredDataWithEncryptedUrls.webhookUrlTemplates || []).map(t => ({...t, url: decryptText(t.url)})),
-                history: {}, 
-                scheduledTasks: validTasksForReschedule 
+            if (validTasks.length < tasks.length) store.set('scheduledTasks', validTasks.map(t_1 => ({ ...t_1, finalUrl: encryptText(t_1.finalUrl), webhookSnapshot: t_1.webhookSnapshot ? { ...t_1.webhookSnapshot, url: encryptText(t_1.webhookSnapshot.url) } : undefined })));
+            const rendererData = {
+                webhooks: data.webhooks || [],
+                webhookUrlTemplates: (data.webhookUrlTemplates || []).map(t_2 => ({ ...t_2, url: decryptText(t_2.url) })),
+                history: {},
+                scheduledTasks: validTasks
             };
-            const historyFromStoreAfterRestore = store.get('history', {}); 
-            for (const webhookId in historyFromStoreAfterRestore) {
-                dataForRenderer.history[webhookId] = historyFromStoreAfterRestore[webhookId].map(entry => {
-                    if (entry.request && entry.request.url) {
-                        return { ...entry, request: { ...entry.request, url: decryptText(entry.request.url) } };
-                    }
-                    return entry;
-                });
+            const restoredHistory = store.get('history', {});
+            for (const id in restoredHistory) {
+                rendererData.history[id] = restoredHistory[id].map(entry => entry.request?.url ? { ...entry, request: { ...entry.request, url: decryptText(entry.request.url) } } : entry);
             }
-
-             if (mainWindow && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
-                mainWindow.webContents.send('scheduled-tasks-update', dataForRenderer.scheduledTasks.sort((a,b) => new Date(a.scheduledTime) - new Date(b.scheduledTime)));
+            if (mainWindow?.webContents && !mainWindow.webContents.isDestroyed()) {
+                mainWindow.webContents.send('scheduled-tasks-update', rendererData.scheduledTasks.sort((a, b) => new Date(a.scheduledTime) - new Date(b.scheduledTime)));
             }
-            return { success: true, msg: '配置恢复成功！应用将重新加载数据。', data: dataForRenderer };
+            return { success: true, msg: '配置恢复成功！', data: rendererData };
         } catch (error) {
             console.error('[Restore] 恢复失败:', error);
             return { success: false, msg: `恢复失败: ${error.message}` };
         }
     });
-    
-    ipcMain.handle('get-startup-setting', () => {
-        if (!app.isPackaged) { return false; }
-        try {
-            const settings = app.getLoginItemSettings({ args: ['--hidden'] });
-            return settings.openAtLogin;
-        } catch (error) { return false; }
-    });
-
+    ipcMain.handle('get-startup-setting', () => app.isPackaged ? app.getLoginItemSettings({ args: ['--hidden'] }).openAtLogin : false);
     ipcMain.handle('set-startup-setting', (event, enable) => {
-        if (!app.isPackaged) { return { success: true, msg: '开发模式下跳过开机启动设置。' }; }
+        if (!app.isPackaged) return { success: true, msg: '开发模式下跳过。' };
         try {
             app.setLoginItemSettings({ openAtLogin: enable, openAsHidden: enable, args: enable ? ['--hidden'] : [] });
-            return { success: true, msg: enable ? '已设置为开机启动。' : '已取消开机启动。' };
-        } catch (error) { return { success: false, msg: `设置开机启动失败: ${error.message}` }; }
+            return { success: true, msg: enable ? '已设置开机启动。' : '已取消开机启动。' };
+        } catch (error) { return { success: false, msg: `设置失败: ${error.message}` }; }
     });
-
-    ipcMain.on('window-minimize', () => { if (mainWindow) mainWindow.minimize(); });
-    ipcMain.on('window-maximize', () => { if (mainWindow) { if (mainWindow.isMaximized()) { mainWindow.unmaximize(); } else { mainWindow.maximize(); } } });
-    ipcMain.on('window-close', () => { if (mainWindow) { if (!app.isQuitting) { mainWindow.hide(); } else { mainWindow.close(); } } });
-    ipcMain.on('open-external-link', (event, url) => { if (url && (url.startsWith('http:') || url.startsWith('https:'))) { shell.openExternal(url); } else { console.warn(`[IPC] Attempted to open invalid or insecure link: ${url}`); } });
-    ipcMain.handle('get-uuid', () => { return uuidv4(); });
-
+    ipcMain.on('window-minimize', () => mainWindow?.minimize());
+    ipcMain.on('window-maximize', () => mainWindow && (mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize()));
+    ipcMain.on('window-close', () => mainWindow && (!app.isQuitting ? mainWindow.hide() : mainWindow.close()));
+    ipcMain.on('open-external-link', (event, url) => (url?.startsWith('http:') || url?.startsWith('https:')) && shell.openExternal(url));
+    ipcMain.handle('get-uuid', uuidv4);
     ipcHandlersRegistered = true;
     console.log("[Main-IPC] IPC Handlers registered.");
 }
 
-function getIconPath(iconName = 'icon.png') {
-    let iconPathValue; // Renamed to avoid conflict with 'path' module
-    if (!app.isPackaged) {
-        iconPathValue = path.join(__dirname, '..', iconName);
-    } else {
-        iconPathValue = path.join(process.resourcesPath, iconName);
-    }
-    if (!fs.existsSync(iconPathValue)) {
-        console.error(`Icon file not found at: ${iconPathValue}. Using fallback.`);
-        return undefined; 
-    }
-    return iconPathValue;
+// 用于主窗口图标和HTML内嵌图标 (从asar加载icon.png)
+function getAppIconPath() {
+    const basePath = app.isPackaged ? app.getAppPath() : path.join(__dirname, '..');
+    return path.join(basePath, 'icon.png');
 }
 
+// 新增：专门用于获取托盘图标路径 (.ico 文件，作为 extraResource)
+function getDedicatedTrayIconPath(iconFilename = 'tray_icon.ico') {
+    if (app.isPackaged) {
+        // process.resourcesPath 指向打包后应用的 resources 目录
+        // "to": "app_icons/tray_icon.ico" (在 package.json extraResources 中定义)
+        return path.join(process.resourcesPath, 'app_icons', iconFilename);
+    } else {
+        // 开发环境下，假设图标位于项目根目录下的 assets/tray_icons/
+        // 并且 main.js 位于 electron/ 文件夹内
+        return path.join(__dirname, '..', 'assets', 'tray_icons', iconFilename);
+    }
+}
 
 function createWindow() {
-    const windowIconPath = getIconPath(process.platform === 'darwin' ? 'icon.icns' : 'icon.png');
+    const windowIconPath = getAppIconPath(); // 主窗口继续使用 app.asar 内的 icon.png
+    console.log(`[Main-Window] Attempting to load window icon from: ${windowIconPath}`);
+    if (!fs.existsSync(windowIconPath)) console.error(`[Main-Window] Window icon file NOT FOUND at: ${windowIconPath}`);
+    else console.log(`[Main-Window] Window icon file FOUND at: ${windowIconPath}`);
 
     mainWindow = new BrowserWindow({
         width: 1200, height: 800, minWidth: 940, minHeight: 600,
         frame: false, titleBarStyle: 'hidden', backgroundColor: '#171a21',
-        webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, },
-        icon: windowIconPath, 
-        show: !shouldStartHidden 
+        webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
+        icon: windowIconPath,
+        show: !shouldStartHidden
     });
+    // mainWindow.webContents.openDevTools(); // 需要时取消注释以调试主进程
     mainWindow.loadFile(path.join(__dirname, '..', 'index.html'));
     mainWindow.on('close', (event) => { if (!app.isQuitting) { event.preventDefault(); mainWindow.hide(); } });
-    mainWindow.on('closed', () => { mainWindow = null; });
+    mainWindow.on('closed', () => mainWindow = null);
     mainWindow.webContents.once('did-finish-load', () => {
         if (store) {
-            const tasksEncryptedUrl = store.get('scheduledTasks', []);
-            const tasksForRenderer = tasksEncryptedUrl.map(t => ({ ...t, finalUrl: decryptText(t.finalUrl), webhookSnapshot: t.webhookSnapshot ? { ...t.webhookSnapshot, url: decryptText(t.webhookSnapshot.url) } : undefined }));
-            if (mainWindow && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
-                 mainWindow.webContents.send('scheduled-tasks-update', tasksForRenderer.sort((a,b) => new Date(a.scheduledTime) - new Date(b.scheduledTime)));
+            const tasks = store.get('scheduledTasks', []).map(t => ({ ...t, finalUrl: decryptText(t.finalUrl), webhookSnapshot: t.webhookSnapshot ? { ...t.webhookSnapshot, url: decryptText(t.webhookSnapshot.url) } : undefined }));
+            if (mainWindow?.webContents && !mainWindow.webContents.isDestroyed()) {
+                 mainWindow.webContents.send('scheduled-tasks-update', tasks.sort((a, b) => new Date(a.scheduledTime) - new Date(b.scheduledTime)));
             }
         }
-        if (shouldStartHidden && mainWindow && mainWindow.isVisible()) { mainWindow.hide(); }
+        if (shouldStartHidden && mainWindow?.isVisible()) mainWindow.hide();
     });
 }
 
 function createTray() {
-    if (tray) { return; }
-    const trayIconPath = getIconPath('icon.png'); 
-    
-    if (!trayIconPath) {
-        try { tray = new Tray(nativeImage.createEmpty()); console.warn("[Main-Tray] Using empty native image as fallback tray icon due to missing icon file.");} 
-        catch (e) { console.error("[Main-Tray] Failed to create fallback tray icon:", e); return; }
-    } else {
-        const icon = nativeImage.createFromPath(trayIconPath);
-        if (icon.isEmpty()) { console.error(`[Main-Tray] Loaded icon is empty. Path: ${trayIconPath}`); return; }
-        tray = new Tray(icon);
+    if (tray) return;
+    // 使用新的函数获取专用托盘图标路径
+    const trayIconPath = getDedicatedTrayIconPath('tray_icon.ico'); // 确保文件名与您实际使用的匹配
+    console.log(`[Main-Tray] Attempting to load dedicated tray icon from: ${trayIconPath}`);
+
+    if (!fs.existsSync(trayIconPath)) {
+        console.error(`[Main-Tray] Dedicated Tray Icon file NOT FOUND at: ${trayIconPath}. Tray will not be created.`);
+        return;
     }
-    
-    const contextMenu = Menu.buildFromTemplate([
-        { label: '显示/隐藏窗口', click: () => { if (mainWindow) { if (mainWindow.isVisible() && mainWindow.isFocused()) { mainWindow.hide(); } else { mainWindow.show(); mainWindow.focus(); } } else { createWindow(); } } },
-        { type: 'separator' }, { label: '退出', click: () => { app.isQuitting = true; app.quit(); } },
-    ]);
-    tray.setToolTip('Webhook Sender'); tray.setContextMenu(contextMenu);
-    tray.on('click', () => { if (mainWindow) { if (mainWindow.isVisible()) { mainWindow.focus(); } else { mainWindow.show(); mainWindow.focus(); } } else { createWindow(); } });
-    console.log("[Main-Tray] System tray icon created successfully.");
-}
+    console.log(`[Main-Tray] Dedicated Tray Icon file FOUND at: ${trayIconPath}`);
 
-async function sendWebhookRequest(payload) { // payload.url is plaintext
-    if (!store) return { id: payload.id || uuidv4(), webhookId: payload.originalWebhookId || payload.id, status: 'failure', error: { msg: "Store not ready." }, timestamp: new Date().toISOString() };
-    const historyId = uuidv4();
-    const { url: urlToSend, method: methodToSend, headers: headersToSend, body: bodyToSend, name, originalWebhookId, webhookSnapshot } = payload;
-    const webhookName = name || webhookSnapshot?.name || 'Unnamed Task';
-    const idForHistory = originalWebhookId || payload.id;
-    const plainBodyForHistory = webhookSnapshot?.plainBody || (typeof bodyToSend === 'string' && bodyToSend.startsWith('{"msg":')) ? JSON.parse(bodyToSend).msg : bodyToSend;
-
-    if (typeof urlToSend !== 'string' || urlToSend.trim() === '') {
-        const errEntry = { id: historyId, webhookId: idForHistory, status: 'failure', timestamp: new Date().toISOString(), request: { url: encryptText(String(urlToSend)), method: methodToSend, headers: headersToSend, body: bodyToSend, plainBody: plainBodyForHistory }, error: { message: "URL invalid pre-request" } };
-        if (mainWindow?.webContents && !mainWindow.webContents.isDestroyed()) { mainWindow.webContents.send('history-updated', { webhookId: errEntry.webhookId, entry: {...errEntry, request: {...errEntry.request, url: String(urlToSend) }} }); }
-        const currentErrHistory = store.get(`history.${errEntry.webhookId}`, []); currentErrHistory.unshift(errEntry); store.set(`history.${errEntry.webhookId}`, currentErrHistory.slice(0, 50));
-        return errEntry;
+    let iconImage;
+    try {
+        // 对于 .ico 文件，通常直接从路径创建更稳定
+        iconImage = nativeImage.createFromPath(trayIconPath);
+        console.log(`[Main-Tray] Successfully created nativeImage from path for dedicated tray icon. Path: ${trayIconPath}. Is empty: ${iconImage.isEmpty()}`);
+    } catch (error) {
+        console.error(`[Main-Tray] Error creating nativeImage from path for dedicated tray icon: ${trayIconPath}`, error);
+        return;
     }
 
-    const historyEntryRequestEncrypted = { url: encryptText(urlToSend), method: methodToSend, headers: headersToSend, body: bodyToSend, plainBody: plainBodyForHistory };
-    let historyEntry = { id: historyId, webhookId: idForHistory, status: 'pending', timestamp: new Date().toISOString(), request: historyEntryRequestEncrypted };
-    
-    if (mainWindow?.webContents && !mainWindow.webContents.isDestroyed()) { 
-        mainWindow.webContents.send('history-updated', { webhookId: idForHistory, entry: {...historyEntry, request: {...historyEntry.request, url: urlToSend}} }); 
+    if (iconImage.isEmpty()) {
+        console.error(`[Main-Tray] Loaded dedicated tray icon is empty. Path: ${trayIconPath}.`);
+        return;
     }
 
     try {
-        let requestData = bodyToSend;
-        try { requestData = JSON.parse(bodyToSend); } catch (e) { /* ignore */ }
-        const response = await axios({ method: methodToSend, url: urlToSend, headers: (headersToSend || []).reduce((acc, cur) => { if (cur.key) acc[cur.key] = cur.value; return acc; }, {}), data: requestData, timeout: 15000 });
-        historyEntry.status = 'success';
-        historyEntry.response = { status: response.status, statusText: response.statusText, headers: response.headers, data: response.data };
+        tray = new Tray(iconImage);
     } catch (error) {
-        historyEntry.status = 'failure';
-        if (error.response) { historyEntry.error = { message: error.message, code: error.code, status: error.response.status, headers: error.response.headers, data: error.response.data }; }
-        else if (error.request) { historyEntry.error = { message: error.message, code: error.code, requestDetails: "No response"}; }
-        else { historyEntry.error = { message: error.message, code: error.code, details: "Setup error" }; }
+        console.error(`[Main-Tray] Error creating Tray object with dedicated icon from: ${trayIconPath}`, error);
+        return;
     }
-    const currentHistory = store.get(`history.${idForHistory}`, []); 
-    currentHistory.unshift(historyEntry); 
-    store.set(`history.${idForHistory}`, currentHistory.slice(0, 50));
-    
-    if (mainWindow?.webContents && !mainWindow.webContents.isDestroyed()) {
-         mainWindow.webContents.send('history-updated', { webhookId: idForHistory, entry: {...historyEntry, request: {...historyEntry.request, url: urlToSend}} }); 
-    }
-    return historyEntry; 
+
+    const contextMenu = Menu.buildFromTemplate([
+        { label: '显示/隐藏窗口', click: () => { if (mainWindow) { mainWindow.isVisible() && mainWindow.isFocused() ? mainWindow.hide() : (mainWindow.show(), mainWindow.focus()); } else { createWindow(); } } },
+        { type: 'separator' },
+        { label: '退出', click: () => { app.isQuitting = true; app.quit(); } },
+    ]);
+    tray.setToolTip('Webhook Sender');
+    tray.setContextMenu(contextMenu);
+    tray.on('click', () => { if (mainWindow) { mainWindow.isVisible() ? mainWindow.focus() : (mainWindow.show(), mainWindow.focus()); } else { createWindow(); } });
+    console.log("[Main-Tray] System tray icon created successfully with dedicated icon.");
 }
 
-function scheduleTaskWithTimeout(taskConfig) { // taskConfig URLs are plaintext
-    const taskId = taskConfig.id;
-    const webhookName = taskConfig.webhookSnapshot?.name || `Task ID ${taskId}`;
-    
-    if (!taskConfig.finalUrl || typeof taskConfig.finalUrl !== 'string' || taskConfig.finalUrl.trim() === '') {
-        console.error(`[Scheduler] Task ${taskId} invalid finalUrl: "${taskConfig.finalUrl}".`); return;
-    }
-    if (!taskConfig.webhookSnapshot || typeof taskConfig.webhookSnapshot.bodyTemplate !== 'string') {
-        console.error(`[Scheduler] Task ${taskId} missing snapshot/bodyTemplate.`); return;
+async function sendWebhookRequest(payload) {
+    if (!store) return { id: payload.id || uuidv4(), webhookId: payload.originalWebhookId || payload.id, status: 'failure', error: { msg: "Store not ready." }, timestamp: new Date().toISOString() };
+    const historyId = uuidv4();
+    const { url, method, headers, body, name, originalWebhookId, webhookSnapshot } = payload;
+    const webhookName = name || webhookSnapshot?.name || 'Unnamed Task';
+    const idForHistory = originalWebhookId || payload.id;
+    const plainBody = webhookSnapshot?.plainBody || (typeof body === 'string' && body.startsWith('{"msg":')) ? JSON.parse(body).msg : body;
+
+    if (typeof url !== 'string' || !url.trim()) {
+        const errEntry = { id: historyId, webhookId: idForHistory, status: 'failure', timestamp: new Date().toISOString(), request: { url: encryptText(String(url)), method, headers, body, plainBody }, error: { message: "URL invalid pre-request" } };
+        if (mainWindow?.webContents && !mainWindow.webContents.isDestroyed()) mainWindow.webContents.send('history-updated', { webhookId: errEntry.webhookId, entry: { ...errEntry, request: { ...errEntry.request, url: String(url) } } });
+        const hist = store.get(`history.${errEntry.webhookId}`, []); hist.unshift(errEntry); store.set(`history.${errEntry.webhookId}`, hist.slice(0, 50));
+        return errEntry;
     }
 
-    if (runningScheduledTimeouts.has(taskId)) { clearTimeout(runningScheduledTimeouts.get(taskId)); runningScheduledTimeouts.delete(taskId); }
-    
-    const delay = new Date(taskConfig.scheduledTime).getTime() - new Date().getTime();
+    const encryptedRequest = { url: encryptText(url), method, headers, body, plainBody };
+    let entry = { id: historyId, webhookId: idForHistory, status: 'pending', timestamp: new Date().toISOString(), request: encryptedRequest };
+    if (mainWindow?.webContents && !mainWindow.webContents.isDestroyed()) mainWindow.webContents.send('history-updated', { webhookId: idForHistory, entry: { ...entry, request: { ...entry.request, url } } });
+
+    try {
+        const response = await axios({ method, url, headers: (headers || []).reduce((acc, cur) => cur.key ? (acc[cur.key] = cur.value, acc) : acc, {}), data: (typeof body === 'string' ? (body.startsWith('{') || body.startsWith('[')) ? JSON.parse(body) : body : body), timeout: 15000 });
+        entry.status = 'success';
+        entry.response = { status: response.status, statusText: response.statusText, headers: response.headers, data: response.data };
+    } catch (error) {
+        entry.status = 'failure';
+        if (error.response) entry.error = { message: error.message, code: error.code, status: error.response.status, headers: error.response.headers, data: error.response.data };
+        else if (error.request) entry.error = { message: error.message, code: error.code, requestDetails: "No response" };
+        else entry.error = { message: error.message, code: error.code, details: "Setup error" };
+    }
+    const hist_1 = store.get(`history.${idForHistory}`, []); hist_1.unshift(entry); store.set(`history.${idForHistory}`, hist_1.slice(0, 50));
+    if (mainWindow?.webContents && !mainWindow.webContents.isDestroyed()) mainWindow.webContents.send('history-updated', { webhookId: idForHistory, entry: { ...entry, request: { ...entry.request, url } } });
+    return entry;
+}
+
+function scheduleTaskWithTimeout(taskConfig) {
+    const { id, webhookSnapshot, finalUrl, scheduledTime, originalWebhookId } = taskConfig;
+    const webhookName = webhookSnapshot?.name || `Task ID ${id}`;
+
+    if (!finalUrl || typeof finalUrl !== 'string' || !finalUrl.trim()) { console.error(`[Scheduler] Task ${id} invalid finalUrl: "${finalUrl}".`); return; }
+    if (!webhookSnapshot?.bodyTemplate || typeof webhookSnapshot.bodyTemplate !== 'string') { console.error(`[Scheduler] Task ${id} missing snapshot/bodyTemplate.`); return; }
+
+    if (runningScheduledTimeouts.has(id)) { clearTimeout(runningScheduledTimeouts.get(id)); runningScheduledTimeouts.delete(id); }
+
+    const delay = new Date(scheduledTime).getTime() - Date.now();
     if (delay > 0) {
         const timerId = setTimeout(async () => {
-            const { webhookSnapshot, finalUrl, originalWebhookId, id } = taskConfig;
             const { plainBody, phoneNumber, bodyTemplate, method, headers, name } = webhookSnapshot;
-            
-            let finalBodyToSend = bodyTemplate.replace(/{phoneNumber}/g, (phoneNumber || "").replace(/"/g, '\\"'))
-                                             .replace(/{phone}/g, (phoneNumber || "").replace(/"/g, '\\"'));
-            const escapedUserMessage = (plainBody || "").replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
-            finalBodyToSend = finalBodyToSend.replace(/{userMessage}/g, escapedUserMessage);
-
-            await sendWebhookRequest({ id, originalWebhookId, url: finalUrl, method, headers, body: finalBodyToSend, name, webhookSnapshot });
-            
-            const currentTasksEncrypted = store.get('scheduledTasks', []);
-            const updatedTasksEncrypted = currentTasksEncrypted.filter(t => t.id !== taskId);
-            store.set('scheduledTasks', updatedTasksEncrypted);
-            runningScheduledTimeouts.delete(taskId); 
-            
-            const tasksForRenderer = updatedTasksEncrypted.map(t => ({...t, finalUrl: decryptText(t.finalUrl), webhookSnapshot: t.webhookSnapshot ? {...t.webhookSnapshot, url: decryptText(t.webhookSnapshot.url)}: undefined }));
-            if (mainWindow?.webContents && !mainWindow.webContents.isDestroyed()) { 
-                mainWindow.webContents.send('scheduled-tasks-update', tasksForRenderer.sort((a,b) => new Date(a.scheduledTime) - new Date(b.scheduledTime))); 
+            let finalBody = bodyTemplate.replace(/{phoneNumber}|{phone}/g, (phoneNumber || "").replace(/"/g, '\\"'));
+            finalBody = finalBody.replace(/{userMessage}/g, (plainBody || "").replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t'));
+            await sendWebhookRequest({ id, originalWebhookId, url: finalUrl, method, headers, body: finalBody, name, webhookSnapshot });
+            const tasks = store.get('scheduledTasks', []).filter(t => t.id !== id);
+            store.set('scheduledTasks', tasks);
+            runningScheduledTimeouts.delete(id);
+            if (mainWindow?.webContents && !mainWindow.webContents.isDestroyed()) {
+                mainWindow.webContents.send('scheduled-tasks-update', tasks.map(t_1 => ({ ...t_1, finalUrl: decryptText(t_1.finalUrl), webhookSnapshot: t_1.webhookSnapshot ? { ...t_1.webhookSnapshot, url: decryptText(t_1.webhookSnapshot.url) } : undefined })).sort((a, b) => new Date(a.scheduledTime) - new Date(b.scheduledTime)));
             }
         }, delay);
-        runningScheduledTimeouts.set(taskId, timerId);
+        runningScheduledTimeouts.set(id, timerId);
     } else {
-        console.warn(`[Scheduler] Task "${webhookName}" (ID: ${taskId}) is past. Removing.`);
-        const currentTasksEncrypted = store.get('scheduledTasks', []);
-        const updatedTasksEncrypted = currentTasksEncrypted.filter(t => t.id !== taskId);
-        if (updatedTasksEncrypted.length < currentTasksEncrypted.length) {
-            store.set('scheduledTasks', updatedTasksEncrypted);
-            const tasksForRenderer = updatedTasksEncrypted.map(t => ({...t, finalUrl: decryptText(t.finalUrl), webhookSnapshot: t.webhookSnapshot ? {...t.webhookSnapshot, url: decryptText(t.webhookSnapshot.url)}: undefined }));
-            if (mainWindow?.webContents && !mainWindow.webContents.isDestroyed()) { 
-                mainWindow.webContents.send('scheduled-tasks-update', tasksForRenderer.sort((a,b) => new Date(a.scheduledTime) - new Date(b.scheduledTime))); 
-            } 
+        console.warn(`[Scheduler] Task "${webhookName}" (ID: ${id}) is past. Removing.`);
+        const tasks_1 = store.get('scheduledTasks', []).filter(t => t.id !== id);
+        if (tasks_1.length < store.get('scheduledTasks', []).length) {
+            store.set('scheduledTasks', tasks_1);
+            if (mainWindow?.webContents && !mainWindow.webContents.isDestroyed()) {
+                mainWindow.webContents.send('scheduled-tasks-update', tasks_1.map(t_2 => ({ ...t_2, finalUrl: decryptText(t_2.finalUrl), webhookSnapshot: t_2.webhookSnapshot ? { ...t_2.webhookSnapshot, url: decryptText(t_2.webhookSnapshot.url) } : undefined })).sort((a, b) => new Date(a.scheduledTime) - new Date(b.scheduledTime)));
+            }
         }
     }
 }
