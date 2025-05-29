@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Webhook 消息发送客户端",
   "main": "electron/main.js",
-  "author": "Your Name",
+  "author": "Cheng Kai",
   "license": "ISC",
   "scripts": {
     "start": "electron .",
@@ -55,12 +55,12 @@
     ],
     "extraResources": [ 
       {
-        "from": "public/icon.png",
-        "to": "public/icon.png" 
+        "from": "icon.png",
+        "to": "icon.png" 
       }
     ],
     "win": { 
-      "icon": "public/icon.png", 
+      "icon": "icon.png", 
       "target": [
         "nsis", 
         "zip"   
@@ -75,7 +75,7 @@
       "runAfterFinish": true 
     },
     "mac": { 
-      "icon": "public/icon.icns", 
+      "icon": "icon.icns", 
       "category": "public.app-category.developer-tools", 
       "target": [
         "dmg",
@@ -83,9 +83,8 @@
       ]
     },
     "linux": { 
-      "icon": "public/icon.png", 
+      "icon": "icon.png", 
       "category": "Utility",
-      "maintainer": "Cheng Kai <i@chengkai.vip>",
       "target": [
         "AppImage",
         "deb",
