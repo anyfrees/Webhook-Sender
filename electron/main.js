@@ -60,6 +60,7 @@ function decryptText(text) {
         const parts = text.split(':');
         const iv = Buffer.from(parts[0], 'hex');
         const encryptedText = Buffer.from(parts[1], 'hex');
+        // 确保密钥是Buffer类型
         const decipher = crypto.createDecipheriv('aes-256-cbc', APP_ENCRYPTION_KEY, iv);
         let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
         decrypted += decipher.final('utf8');
@@ -415,13 +416,30 @@ function registerIpcHandlers() {
     console.log("[Main-IPC] IPC Handlers registered.");
 }
 
+function getIconPath(iconName = 'icon.png') {
+    let iconPathValue; // Renamed to avoid conflict with 'path' module
+    if (!app.isPackaged) {
+        iconPathValue = path.join(__dirname, '..', iconName);
+    } else {
+        iconPathValue = path.join(process.resourcesPath, iconName);
+    }
+    if (!fs.existsSync(iconPathValue)) {
+        console.error(`Icon file not found at: ${iconPathValue}. Using fallback.`);
+        return undefined; 
+    }
+    return iconPathValue;
+}
+
+
 function createWindow() {
-    const iconPath = path.join(__dirname, '..', 'public', 'icon.png');
+    const windowIconPath = getIconPath(process.platform === 'darwin' ? 'icon.icns' : 'icon.png');
+
     mainWindow = new BrowserWindow({
         width: 1200, height: 800, minWidth: 940, minHeight: 600,
         frame: false, titleBarStyle: 'hidden', backgroundColor: '#171a21',
         webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, },
-        icon: iconPath, show: !shouldStartHidden 
+        icon: windowIconPath, 
+        show: !shouldStartHidden 
     });
     mainWindow.loadFile(path.join(__dirname, '..', 'index.html'));
     mainWindow.on('close', (event) => { if (!app.isQuitting) { event.preventDefault(); mainWindow.hide(); } });
@@ -440,12 +458,17 @@ function createWindow() {
 
 function createTray() {
     if (tray) { return; }
-    let iconPath;
-    const iconFileName = 'icon.png';
-    if (!app.isPackaged) { iconPath = path.join(__dirname, '..', 'public', iconFileName); } 
-    else { iconPath = path.join(process.resourcesPath, 'public', iconFileName); if (!fs.existsSync(iconPath)) { iconPath = path.join(process.resourcesPath, iconFileName); } }
-    if (!fs.existsSync(iconPath)) { try { tray = new Tray(nativeImage.createEmpty()); } catch (e) { return; } } 
-    else { const icon = nativeImage.createFromPath(iconPath); if (icon.isEmpty()) { return; } tray = new Tray(icon); }
+    const trayIconPath = getIconPath('icon.png'); 
+    
+    if (!trayIconPath) {
+        try { tray = new Tray(nativeImage.createEmpty()); console.warn("[Main-Tray] Using empty native image as fallback tray icon due to missing icon file.");} 
+        catch (e) { console.error("[Main-Tray] Failed to create fallback tray icon:", e); return; }
+    } else {
+        const icon = nativeImage.createFromPath(trayIconPath);
+        if (icon.isEmpty()) { console.error(`[Main-Tray] Loaded icon is empty. Path: ${trayIconPath}`); return; }
+        tray = new Tray(icon);
+    }
+    
     const contextMenu = Menu.buildFromTemplate([
         { label: '显示/隐藏窗口', click: () => { if (mainWindow) { if (mainWindow.isVisible() && mainWindow.isFocused()) { mainWindow.hide(); } else { mainWindow.show(); mainWindow.focus(); } } else { createWindow(); } } },
         { type: 'separator' }, { label: '退出', click: () => { app.isQuitting = true; app.quit(); } },

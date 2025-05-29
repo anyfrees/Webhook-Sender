@@ -1,6 +1,6 @@
 {
   "name": "webhook-client-vanilla",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Webhook 消息发送客户端",
   "main": "electron/main.js",
   "author": "Cheng Kai",
@@ -33,14 +33,15 @@
     "copyright": "Copyright © 2024 Cheng Kai",
     "directories": {
       "output": "dist", 
-      "buildResources": "build"
+      "buildResources": "build" 
     },
     "files": [ 
       "electron/**/*",
       "src/**/*",
-      "public/**/*",
       "index.html",
       "package.json",
+      "icon.png",        
+      "icon.icns",       
       "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
       "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
       "!**/node_modules/*.d.ts",
@@ -53,14 +54,19 @@
       "!**/{appveyor.yml,.travis.yml,circle.yml}",
       "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
     ],
-    "extraResources": [ 
+    "extraResources": [  
       {
-        "from": "icon.png",
-        "to": "icon.png" 
+        "from": "icon.png", 
+        "to": "icon.png"    
+      },
+      { 
+        "from": "icon.icns",
+        "to": "icon.icns",
+        "filter": ["**/*"] 
       }
     ],
     "win": { 
-      "icon": "icon.png", 
+      "icon": "icon.png",
       "target": [
         "nsis", 
         "zip"   
@@ -85,7 +91,7 @@
     "linux": { 
       "icon": "icon.png", 
       "category": "Utility",
-      "maintainer": "Cheng Kai <i@chengkai.vip>",
+      "maintainer": "Cheng Kai <i@chengkai.vip>", 
       "target": [
         "AppImage",
         "deb",
