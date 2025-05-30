@@ -165,10 +165,6 @@ jobs:
           echo "RELEASE_NAME=${RELEASE_NAME_VAR}" >> $GITHUB_ENV
           echo "IS_PRERELEASE=${IS_PRERELEASE_VAR}" >> $GITHUB_ENV
 
-          echo "TAG_NAME=${TAG_NAME_VAR}" >> $GITHUB_OUTPUT
-          echo "RELEASE_NAME=${RELEASE_NAME_VAR}" >> $GITHUB_OUTPUT
-          echo "IS_PRERELEASE=${IS_PRERELEASE_VAR}" >> $GITHUB_OUTPUT
-
           echo "Determined TAG_NAME: ${TAG_NAME_VAR}"
           echo "Determined RELEASE_NAME: ${RELEASE_NAME_VAR}"
           echo "Determined IS_PRERELEASE: ${IS_PRERELEASE_VAR}"
@@ -230,10 +226,10 @@ jobs:
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ steps.get_tag_info.outputs.TAG_NAME }}
-          name: ${{ steps.get_tag_info.outputs.RELEASE_NAME }}
+          tag_name: ${{ env.TAG_NAME }}
+          name: ${{ env.RELEASE_NAME }}
           body: |
-            Automated release for ${{ steps.get_tag_info.outputs.TAG_NAME }}.
+            Automated release for ${{ env.TAG_NAME }}.
             Assets:
             - Windows Installer (x64)
             - Windows Portable (x64)
@@ -241,10 +237,11 @@ jobs:
             - macOS DMG (Apple Silicon arm64)
             - macOS ZIP (Intel x64)
             - macOS ZIP (Apple Silicon arm64)
-          prerelease: ${{ steps.get_tag_info.outputs.IS_PRERELEASE }}
+            - Linux AppImage (x64)
             - Linux .deb (x64)
             - Linux .rpm (x64)
           draft: false
+          prerelease: ${{ env.IS_PRERELEASE }}
           files: |
             release-assets/*.exe
             release-assets/*.zip
