@@ -36,14 +36,7 @@ jobs:
           - os: windows-latest
             arch: x64
     runs-on: ${{ matrix.os }}
-    outputs: # Define outputs for artifact names
-      win_setup_artifact_name: Webhook-Sender-Windows-Setup-${{ matrix.arch }}-${{ github.run_id }}
-      win_portable_artifact_name: Webhook-Sender-Windows-portable-${{ matrix.arch }}-${{ github.run_id }}
-      macos_dmg_artifact_name: Webhook-Sender-macOS-${{ matrix.arch }}-${{ github.run_id }}.dmg
-      macos_zip_artifact_name: Webhook-Sender-macOS-${{ matrix.arch }}-zip-${{ github.run_id }}
-      linux_appimage_artifact_name: Webhook-Sender-Linux-AppImage-${{ matrix.arch }}-${{ github.run_id }}
-      linux_deb_artifact_name: Webhook-Sender-Linux-deb-${{ matrix.arch }}-${{ github.run_id }}
-      linux_rpm_artifact_name: Webhook-Sender-Linux-rpm-${{ matrix.arch }}-${{ github.run_id }}
+    # Removed the problematic 'outputs' section here
 
     steps:
       - name: Checkout code
@@ -79,30 +72,27 @@ jobs:
         shell: bash
 
       # --- Uploading Artifacts ---
-      # We will give specific names to artifacts so the publish job can find them easily.
-      # The file names inside the artifacts should match what electron-builder produces.
-
       - name: Upload Windows Artifact (NSIS Installer)
         if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Webhook-Sender-Windows-Setup-${{ matrix.arch }}-${{ github.run_id }} # Consistent name
-          path: dist/*.exe # Assuming only one .exe installer
+          name: Webhook-Sender-Windows-Setup-${{ matrix.arch }}-${{ github.run_id }}
+          path: dist/*.exe
           if-no-files-found: error
 
       - name: Upload Windows Artifact (Portable)
         if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Webhook-Sender-Windows-portable-${{ matrix.arch }}-${{ github.run_id }} # Consistent name
-          path: dist/*.zip # Assuming only one .zip portable
+          name: Webhook-Sender-Windows-portable-${{ matrix.arch }}-${{ github.run_id }}
+          path: dist/*.zip
           if-no-files-found: error
 
       - name: Upload macOS Artifact (DMG)
         if: matrix.os == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Webhook-Sender-macOS-${{ matrix.arch }}-${{ github.run_id }}.dmg # Consistent name
+          name: Webhook-Sender-macOS-${{ matrix.arch }}-${{ github.run_id }}.dmg
           path: dist/*.dmg
           if-no-files-found: error
 
@@ -110,15 +100,15 @@ jobs:
         if: matrix.os == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Webhook-Sender-macOS-${{ matrix.arch }}-zip-${{ github.run_id }} # Consistent name
-          path: dist/*mac*.zip # Might need to be more specific if there are other zips
+          name: Webhook-Sender-macOS-${{ matrix.arch }}-zip-${{ github.run_id }}
+          path: dist/*mac*.zip
           if-no-files-found: error
 
       - name: Upload Linux Artifact (AppImage)
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Webhook-Sender-Linux-AppImage-${{ matrix.arch }}-${{ github.run_id }} # Consistent name
+          name: Webhook-Sender-Linux-AppImage-${{ matrix.arch }}-${{ github.run_id }}
           path: dist/*.AppImage
           if-no-files-found: error
 
@@ -126,7 +116,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Webhook-Sender-Linux-deb-${{ matrix.arch }}-${{ github.run_id }} # Consistent name
+          name: Webhook-Sender-Linux-deb-${{ matrix.arch }}-${{ github.run_id }}
           path: dist/*.deb
           if-no-files-found: error
 
@@ -134,18 +124,17 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Webhook-Sender-Linux-rpm-${{ matrix.arch }}-${{ github.run_id }} # Consistent name
+          name: Webhook-Sender-Linux-rpm-${{ matrix.arch }}-${{ github.run_id }}
           path: dist/*.rpm
           if-no-files-found: error
 
   publish-release:
     name: Publish to GitHub Releases
-    needs: build # Depends on the build job for all platforms/architectures
-    # Only run on tag pushes or manual dispatch
+    needs: build
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Required to create releases and upload assets
+      contents: write
 
     steps:
       - name: Determine Tag Name
@@ -155,13 +144,12 @@ jobs:
           if [[ "${{ github.event_name }}" == "push" && "${{ startsWith(github.ref, 'refs/tags/') }}" == "true" ]]; then
             echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
             echo "RELEASE_NAME=Release ${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-            echo "IS_PRERELEASE=false" >> $GITHUB_ENV # Assume tags are not pre-releases, adjust if needed
+            echo "IS_PRERELEASE=false" >> $GITHUB_ENV
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "TAG_NAME=${{ github.event.inputs.tag_name || format('nightly-{0}', github.run_id) }}" >> $GITHUB_ENV
             echo "RELEASE_NAME=Nightly Build ${{ github.event.inputs.tag_name || format('nightly-{0}', github.run_id) }}" >> $GITHUB_ENV
-            echo "IS_PRERELEASE=true" >> $GITHUB_ENV # Manual/nightly runs are pre-releases
+            echo "IS_PRERELEASE=true" >> $GITHUB_ENV
           else
-            # Fallback for other cases, though 'if' condition should prevent this
             echo "TAG_NAME=unknown-tag-${{ github.run_id }}" >> $GITHUB_ENV
             echo "RELEASE_NAME=Unknown Release ${{ github.run_id }}" >> $GITHUB_ENV
             echo "IS_PRERELEASE=true" >> $GITHUB_ENV
@@ -173,9 +161,6 @@ jobs:
       - name: Create Download Directory
         run: mkdir -p release-assets
 
-      # Download all artifacts produced by the build job
-      # Note: Artifact names must match exactly what was uploaded.
-      # The ${{ github.run_id }} part ensures we get artifacts from the current run.
       - name: Download Windows Setup (x64)
         uses: actions/download-artifact@v4
         with:
@@ -230,7 +215,7 @@ jobs:
         with:
           tag_name: ${{ env.TAG_NAME }}
           name: ${{ env.RELEASE_NAME }}
-          body: | # Optional: Add release notes here
+          body: |
             Automated release for ${{ env.TAG_NAME }}.
             Assets:
             - Windows Installer (x64)
@@ -251,6 +236,6 @@ jobs:
             release-assets/*.AppImage
             release-assets/*.deb
             release-assets/*.rpm
-          fail_on_unmatched_files: true # Important: fail if files are not found
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
