@@ -1,15 +1,22 @@
-name: Build Electron App
+name: Build Electron App and Release
 
 on:
   push:
     branches:
-      - main 
-      - master 
+      - main
+      - master
+    tags:
+      - 'v*.*.*' # Trigger on version tags like v1.0.0
   pull_request:
     branches:
       - main
       - master
-  workflow_dispatch:
+  workflow_dispatch: # Allows manual triggering
+    inputs:
+      tag_name:
+        description: 'Tag for the release (e.g., v1.0.0 or nightly-YYYYMMDD)'
+        required: false
+        default: 'nightly-${{ github.run_id }}' # Default for manual runs
 
 jobs:
   build:
@@ -19,20 +26,24 @@ jobs:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
         arch: [x64]
-        include: 
-          # macOS builds for Intel and Apple Silicon
+        include:
           - os: macos-latest
-            arch: x64 
+            arch: x64
           - os: macos-latest
             arch: arm64
-          # Linux build
           - os: ubuntu-latest
             arch: x64
-          # Windows build
           - os: windows-latest
             arch: x64
-
     runs-on: ${{ matrix.os }}
+    outputs: # Define outputs for artifact names
+      win_setup_artifact_name: Webhook-Sender-Windows-Setup-${{ matrix.arch }}-${{ github.run_id }}
+      win_portable_artifact_name: Webhook-Sender-Windows-portable-${{ matrix.arch }}-${{ github.run_id }}
+      macos_dmg_artifact_name: Webhook-Sender-macOS-${{ matrix.arch }}-${{ github.run_id }}.dmg
+      macos_zip_artifact_name: Webhook-Sender-macOS-${{ matrix.arch }}-zip-${{ github.run_id }}
+      linux_appimage_artifact_name: Webhook-Sender-Linux-AppImage-${{ matrix.arch }}-${{ github.run_id }}
+      linux_deb_artifact_name: Webhook-Sender-Linux-deb-${{ matrix.arch }}-${{ github.run_id }}
+      linux_rpm_artifact_name: Webhook-Sender-Linux-rpm-${{ matrix.arch }}-${{ github.run_id }}
 
     steps:
       - name: Checkout code
@@ -41,7 +52,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18' 
+          node-version: '18'
 
       - name: Install dependencies (npm)
         run: npm install --frozen-lockfile
@@ -52,8 +63,7 @@ jobs:
           npm run dist -- --mac --${{ matrix.arch }}
         shell: bash
         env:
-          # 禁用 electron-builder 的自动签名发现功能，用于测试
-          CSC_IDENTITY_AUTO_DISCOVERY: false 
+          CSC_IDENTITY_AUTO_DISCOVERY: false
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and package Electron app (Windows & Linux)
@@ -64,55 +74,183 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: List files in dist directory 
+      - name: List files in dist directory
         run: ls -R dist/
         shell: bash
+
+      # --- Uploading Artifacts ---
+      # We will give specific names to artifacts so the publish job can find them easily.
+      # The file names inside the artifacts should match what electron-builder produces.
 
       - name: Upload Windows Artifact (NSIS Installer)
         if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Webhook-Sender-Windows-Setup-${{ matrix.arch }}-${{ github.run_id }}
-          path: dist/*.exe 
+          name: Webhook-Sender-Windows-Setup-${{ matrix.arch }}-${{ github.run_id }} # Consistent name
+          path: dist/*.exe # Assuming only one .exe installer
+          if-no-files-found: error
 
       - name: Upload Windows Artifact (Portable)
         if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Webhook-Sender-Windows-portable-${{ matrix.arch }}-${{ github.run_id }}
-          path: dist/*.zip 
+          name: Webhook-Sender-Windows-portable-${{ matrix.arch }}-${{ github.run_id }} # Consistent name
+          path: dist/*.zip # Assuming only one .zip portable
+          if-no-files-found: error
 
       - name: Upload macOS Artifact (DMG)
         if: matrix.os == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Webhook-Sender-macOS-${{ matrix.arch }}-${{ github.run_id }}.dmg
+          name: Webhook-Sender-macOS-${{ matrix.arch }}-${{ github.run_id }}.dmg # Consistent name
           path: dist/*.dmg
+          if-no-files-found: error
 
       - name: Upload macOS Artifact (ZIP)
         if: matrix.os == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Webhook-Sender-macOS-${{ matrix.arch }}-zip-${{ github.run_id }}
-          path: dist/*mac*.zip 
+          name: Webhook-Sender-macOS-${{ matrix.arch }}-zip-${{ github.run_id }} # Consistent name
+          path: dist/*mac*.zip # Might need to be more specific if there are other zips
+          if-no-files-found: error
 
       - name: Upload Linux Artifact (AppImage)
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Webhook-Sender-Linux-AppImage-${{ matrix.arch }}-${{ github.run_id }}
+          name: Webhook-Sender-Linux-AppImage-${{ matrix.arch }}-${{ github.run_id }} # Consistent name
           path: dist/*.AppImage
-          
+          if-no-files-found: error
+
       - name: Upload Linux Artifact (deb)
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Webhook-Sender-Linux-deb-${{ matrix.arch }}-${{ github.run_id }}
+          name: Webhook-Sender-Linux-deb-${{ matrix.arch }}-${{ github.run_id }} # Consistent name
           path: dist/*.deb
+          if-no-files-found: error
 
       - name: Upload Linux Artifact (rpm)
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Webhook-Sender-Linux-rpm-${{ matrix.arch }}-${{ github.run_id }}
+          name: Webhook-Sender-Linux-rpm-${{ matrix.arch }}-${{ github.run_id }} # Consistent name
           path: dist/*.rpm
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish to GitHub Releases
+    needs: build # Depends on the build job for all platforms/architectures
+    # Only run on tag pushes or manual dispatch
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to create releases and upload assets
+
+    steps:
+      - name: Determine Tag Name
+        id: get_tag
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && "${{ startsWith(github.ref, 'refs/tags/') }}" == "true" ]]; then
+            echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+            echo "RELEASE_NAME=Release ${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+            echo "IS_PRERELEASE=false" >> $GITHUB_ENV # Assume tags are not pre-releases, adjust if needed
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "TAG_NAME=${{ github.event.inputs.tag_name || format('nightly-{0}', github.run_id) }}" >> $GITHUB_ENV
+            echo "RELEASE_NAME=Nightly Build ${{ github.event.inputs.tag_name || format('nightly-{0}', github.run_id) }}" >> $GITHUB_ENV
+            echo "IS_PRERELEASE=true" >> $GITHUB_ENV # Manual/nightly runs are pre-releases
+          else
+            # Fallback for other cases, though 'if' condition should prevent this
+            echo "TAG_NAME=unknown-tag-${{ github.run_id }}" >> $GITHUB_ENV
+            echo "RELEASE_NAME=Unknown Release ${{ github.run_id }}" >> $GITHUB_ENV
+            echo "IS_PRERELEASE=true" >> $GITHUB_ENV
+          fi
+          echo "Determined TAG_NAME: $TAG_NAME"
+          echo "Determined RELEASE_NAME: $RELEASE_NAME"
+          echo "Determined IS_PRERELEASE: $IS_PRERELEASE"
+
+      - name: Create Download Directory
+        run: mkdir -p release-assets
+
+      # Download all artifacts produced by the build job
+      # Note: Artifact names must match exactly what was uploaded.
+      # The ${{ github.run_id }} part ensures we get artifacts from the current run.
+      - name: Download Windows Setup (x64)
+        uses: actions/download-artifact@v4
+        with:
+          name: Webhook-Sender-Windows-Setup-x64-${{ github.run_id }}
+          path: release-assets/
+      - name: Download Windows Portable (x64)
+        uses: actions/download-artifact@v4
+        with:
+          name: Webhook-Sender-Windows-portable-x64-${{ github.run_id }}
+          path: release-assets/
+      - name: Download macOS DMG (x64)
+        uses: actions/download-artifact@v4
+        with:
+          name: Webhook-Sender-macOS-x64-${{ github.run_id }}.dmg
+          path: release-assets/
+      - name: Download macOS DMG (arm64)
+        uses: actions/download-artifact@v4
+        with:
+          name: Webhook-Sender-macOS-arm64-${{ github.run_id }}.dmg
+          path: release-assets/
+      - name: Download macOS ZIP (x64)
+        uses: actions/download-artifact@v4
+        with:
+          name: Webhook-Sender-macOS-x64-zip-${{ github.run_id }}
+          path: release-assets/
+      - name: Download macOS ZIP (arm64)
+        uses: actions/download-artifact@v4
+        with:
+          name: Webhook-Sender-macOS-arm64-zip-${{ github.run_id }}
+          path: release-assets/
+      - name: Download Linux AppImage (x64)
+        uses: actions/download-artifact@v4
+        with:
+          name: Webhook-Sender-Linux-AppImage-x64-${{ github.run_id }}
+          path: release-assets/
+      - name: Download Linux deb (x64)
+        uses: actions/download-artifact@v4
+        with:
+          name: Webhook-Sender-Linux-deb-x64-${{ github.run_id }}
+          path: release-assets/
+      - name: Download Linux rpm (x64)
+        uses: actions/download-artifact@v4
+        with:
+          name: Webhook-Sender-Linux-rpm-x64-${{ github.run_id }}
+          path: release-assets/
+
+      - name: List downloaded assets
+        run: ls -R release-assets/
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          name: ${{ env.RELEASE_NAME }}
+          body: | # Optional: Add release notes here
+            Automated release for ${{ env.TAG_NAME }}.
+            Assets:
+            - Windows Installer (x64)
+            - Windows Portable (x64)
+            - macOS DMG (Intel x64)
+            - macOS DMG (Apple Silicon arm64)
+            - macOS ZIP (Intel x64)
+            - macOS ZIP (Apple Silicon arm64)
+            - Linux AppImage (x64)
+            - Linux .deb (x64)
+            - Linux .rpm (x64)
+          draft: false
+          prerelease: ${{ env.IS_PRERELEASE }}
+          files: |
+            release-assets/*.exe
+            release-assets/*.zip
+            release-assets/*.dmg
+            release-assets/*.AppImage
+            release-assets/*.deb
+            release-assets/*.rpm
+          fail_on_unmatched_files: true # Important: fail if files are not found
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
