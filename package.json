@@ -65,8 +65,14 @@
       "icon": "icon.ico",
       "target": [
         "nsis",
-        "portable"
+        {
+          "target": "portable",
+          "arch": ["x64"] 
+        }
       ]
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}-${arch}.zip"
     },
     "nsis": {
       "oneClick": false,
