@@ -16,7 +16,8 @@ on:
       tag_name:
         description: 'Tag for the release (e.g., v1.0.0 or nightly-YYYYMMDD)'
         required: false
-        default: 'nightly-${{ github.run_id }}' # Default for manual runs
+        # REMOVED: default: 'nightly-${{ github.run_id }}' 
+        # Default will be handled by the script in publish-release job if not provided
 
 jobs:
   build:
@@ -36,8 +37,6 @@ jobs:
           - os: windows-latest
             arch: x64
     runs-on: ${{ matrix.os }}
-    # No 'outputs:' section here in the build job, as it was causing issues.
-    # Artifact names are constructed consistently in upload steps and used in download steps.
 
     steps:
       - name: Checkout code
@@ -151,8 +150,9 @@ jobs:
             RELEASE_NAME_VAR="Release ${TAG_NAME_VAR}"
             IS_PRERELEASE_VAR="false" # Tags are considered stable releases
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            # If github.event.inputs.tag_name is empty or not provided, format will use the second part.
             TAG_NAME_VAR="${{ github.event.inputs.tag_name || format('nightly-{0}', github.run_id) }}"
-            RELEASE_NAME_VAR="Nightly Build ${TAG_NAME_VAR}"
+            RELEASE_NAME_VAR="Nightly Build ${TAG_NAME_VAR}" # Use the determined TAG_NAME_VAR for consistency
             IS_PRERELEASE_VAR="true"
           else
             # Fallback, though the job's 'if' condition should prevent this path
