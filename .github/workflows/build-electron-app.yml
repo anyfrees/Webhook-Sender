@@ -36,7 +36,8 @@ jobs:
           - os: windows-latest
             arch: x64
     runs-on: ${{ matrix.os }}
-    # Removed the problematic 'outputs' section here
+    # No 'outputs:' section here in the build job, as it was causing issues.
+    # Artifact names are constructed consistently in upload steps and used in download steps.
 
     steps:
       - name: Checkout code
@@ -101,7 +102,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Webhook-Sender-macOS-${{ matrix.arch }}-zip-${{ github.run_id }}
-          path: dist/*mac*.zip
+          path: dist/*mac*.zip # Be specific if other zips exist
           if-no-files-found: error
 
       - name: Upload Linux Artifact (AppImage)
@@ -137,30 +138,42 @@ jobs:
       contents: write
 
     steps:
-      - name: Determine Tag Name
-        id: get_tag
+      - name: Determine Tag Name and Release Info
+        id: get_tag_info
         shell: bash
         run: |
+          TAG_NAME_VAR=""
+          RELEASE_NAME_VAR=""
+          IS_PRERELEASE_VAR="true" # Default to prerelease
+
           if [[ "${{ github.event_name }}" == "push" && "${{ startsWith(github.ref, 'refs/tags/') }}" == "true" ]]; then
-            echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-            echo "RELEASE_NAME=Release ${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-            echo "IS_PRERELEASE=false" >> $GITHUB_ENV
+            TAG_NAME_VAR="${GITHUB_REF#refs/tags/}"
+            RELEASE_NAME_VAR="Release ${TAG_NAME_VAR}"
+            IS_PRERELEASE_VAR="false" # Tags are considered stable releases
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "TAG_NAME=${{ github.event.inputs.tag_name || format('nightly-{0}', github.run_id) }}" >> $GITHUB_ENV
-            echo "RELEASE_NAME=Nightly Build ${{ github.event.inputs.tag_name || format('nightly-{0}', github.run_id) }}" >> $GITHUB_ENV
-            echo "IS_PRERELEASE=true" >> $GITHUB_ENV
+            TAG_NAME_VAR="${{ github.event.inputs.tag_name || format('nightly-{0}', github.run_id) }}"
+            RELEASE_NAME_VAR="Nightly Build ${TAG_NAME_VAR}"
+            IS_PRERELEASE_VAR="true"
           else
-            echo "TAG_NAME=unknown-tag-${{ github.run_id }}" >> $GITHUB_ENV
-            echo "RELEASE_NAME=Unknown Release ${{ github.run_id }}" >> $GITHUB_ENV
-            echo "IS_PRERELEASE=true" >> $GITHUB_ENV
+            # Fallback, though the job's 'if' condition should prevent this path
+            TAG_NAME_VAR="unknown-tag-${{ github.run_id }}"
+            RELEASE_NAME_VAR="Unknown Release ${{ github.run_id }}"
+            IS_PRERELEASE_VAR="true"
           fi
-          echo "Determined TAG_NAME: $TAG_NAME"
-          echo "Determined RELEASE_NAME: $RELEASE_NAME"
-          echo "Determined IS_PRERELEASE: $IS_PRERELEASE"
+
+          echo "TAG_NAME=${TAG_NAME_VAR}" >> $GITHUB_ENV
+          echo "RELEASE_NAME=${RELEASE_NAME_VAR}" >> $GITHUB_ENV
+          echo "IS_PRERELEASE=${IS_PRERELEASE_VAR}" >> $GITHUB_ENV
+
+          echo "Determined TAG_NAME: ${TAG_NAME_VAR}"
+          echo "Determined RELEASE_NAME: ${RELEASE_NAME_VAR}"
+          echo "Determined IS_PRERELEASE: ${IS_PRERELEASE_VAR}"
 
       - name: Create Download Directory
         run: mkdir -p release-assets
 
+      # Download all artifacts produced by the build job
+      # Ensure these names exactly match the 'name' in the 'upload-artifact' steps of the 'build' job
       - name: Download Windows Setup (x64)
         uses: actions/download-artifact@v4
         with:
